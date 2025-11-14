@@ -3,9 +3,9 @@
    SPDX-License-Identifier: Apache-2.0
  */
 
-package io.narayana.lra.arquillian.deployment.scenario;
+package io.narayana.lra.testcontainers.deployment.scenario;
 
-import io.narayana.lra.arquillian.deployment.WildflyLRACoordinatorDeployment;
+import io.narayana.lra.testcontainers.deployment.WildflyLRACoordinatorDeployment;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;

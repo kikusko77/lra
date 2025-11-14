@@ -3,9 +3,9 @@
    SPDX-License-Identifier: Apache-2.0
  */
 
-package io.narayana.lra.arquillian.appender;
+package io.narayana.lra.testcontainers.appender;
 
-import io.narayana.lra.arquillian.spi.NarayanaLRARecovery;
+import io.narayana.lra.testcontainers.spi.NarayanaLRARecovery;
 import java.util.Map;
 import java.util.Optional;
 import org.jboss.arquillian.config.descriptor.api.ArquillianDescriptor;
@@ -24,7 +24,7 @@ import org.jboss.shrinkwrap.api.spec.JavaArchive;
  * enriched with dependencies, services and other needed properties/files in order to run the Narayana
  * implementation of the MicroProfile LRA specification. This class is an ad-hoc AuxiliaryArchiveAppender
  * developed exactly for this purpose and it can be activated specifying the activation class
- * {@link io.narayana.lra.arquillian.MpLraTckExtension}
+ * {@link io.narayana.lra.testcontainers.MpLraTckExtension}
  * in src/main/resources/META-INF/services/org.jboss.arquillian.core.spi.LoadableExtension. Moreover, this
  * extension is activated when an extension section is defined in arquillian.xml of the module
  * </p>

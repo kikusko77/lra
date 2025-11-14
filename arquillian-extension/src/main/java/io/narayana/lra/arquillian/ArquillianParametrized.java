@@ -3,7 +3,7 @@
    SPDX-License-Identifier: Apache-2.0
  */
 
-package io.narayana.lra.arquillian;
+package io.narayana.lra.testcontainers;
 
 import java.lang.reflect.Field;
 import java.text.MessageFormat;

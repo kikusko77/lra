@@ -3,7 +3,7 @@
    SPDX-License-Identifier: Apache-2.0
  */
 
-package io.narayana.lra.arquillian.spi;
+package io.narayana.lra.testcontainers.spi;
 
 import static io.narayana.lra.LRAConstants.RECOVERY_COORDINATOR_PATH_NAME;
 

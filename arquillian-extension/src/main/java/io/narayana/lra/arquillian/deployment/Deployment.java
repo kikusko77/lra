@@ -3,7 +3,7 @@
    SPDX-License-Identifier: Apache-2.0
  */
 
-package io.narayana.lra.arquillian.deployment;
+package io.narayana.lra.testcontainers.deployment;
 
 import org.jboss.shrinkwrap.api.Archive;
 
