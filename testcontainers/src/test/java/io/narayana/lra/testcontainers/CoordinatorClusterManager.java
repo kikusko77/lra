@@ -1,21 +1,24 @@
 package io.narayana.lra.testcontainers;
 
-import org.testcontainers.containers.Network;
-
 import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.testcontainers.containers.Network;
 
 public class CoordinatorClusterManager {
 
     private final Network network = Network.newNetwork();
     private final List<LraCoordinatorContainer> coordinators = new ArrayList<>();
     private ProxyContainer proxy;
+    private Path sharedObjectStore;
 
     public void startCoordinators(int count) {
-        // Optional: start registry HTTP server (for your own monitoring / Debezium later)
         try {
-            RegistryHttpServer.start();
+            sharedObjectStore = Files.createTempDirectory("lra-objectstore-");
+            System.out.println("✓ Shared object store created at: " + sharedObjectStore);
         } catch (IOException e) {
             throw new RuntimeException("Failed to start registry HTTP server", e);
         }
@@ -26,26 +29,26 @@ public class CoordinatorClusterManager {
 
         proxy = new ProxyContainer(network);
         proxy.start();
-
-        // This is the URL your tests / MP config should use
-        System.setProperty("lra.proxy.url", proxy.getUrl() + "/lra-coordinator");
-        // or if MP LRA expects lra.coordinator.url:
-        System.setProperty("lra.coordinator.url", proxy.getUrl() + "/lra-coordinator");
     }
 
     private void startCoordinator(String id) {
-        LraCoordinatorContainer c = new LraCoordinatorContainer(id)
+        LraCoordinatorContainer c = new LraCoordinatorContainer(id, sharedObjectStore.toString())
                 .withNetwork(network)
                 .withNetworkAliases(id);
 
         c.start();
-
-        // Registry DB is for you (e.g. to track instances, Debezium, etc.)
-        RegistryDatabase.insert(id, id, 8080); // internal port, not mapped one
         coordinators.add(c);
     }
 
     public String getProxyUrl() {
         return proxy.getUrl() + "/lra-coordinator";
+    }
+
+    public URI getSharedObjectStorePath() {
+        return sharedObjectStore.toUri();
+    }
+
+    public List<LraCoordinatorContainer> getCoordinators() {
+        return coordinators;
     }
 }

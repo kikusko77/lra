@@ -45,6 +45,7 @@
     <module>proxy</module>
     <module>jaxrs</module>
     <module>arquillian-extension</module>
+    <module>testcontainers</module>
   </modules>
 
   <scm>

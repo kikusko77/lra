@@ -1,4 +1,0 @@
-providers:
-  http:
-    endpoint: "http://registry:9000/coordinators"
-    pollInterval: "2s"

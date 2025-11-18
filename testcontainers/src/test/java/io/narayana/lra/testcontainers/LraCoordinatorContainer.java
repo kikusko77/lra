@@ -1,24 +1,27 @@
 package io.narayana.lra.testcontainers;
 
+import java.time.Duration;
+import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
 public class LraCoordinatorContainer extends GenericContainer<LraCoordinatorContainer> {
 
-    public LraCoordinatorContainer(String id) {
-        super("eclipse/narayana-lra-coordinator"); // or your custom image
+    public LraCoordinatorContainer(String id, String sharedObjectStorePath) {
+        super("quay.io/jbosstm/lra-coordinator:latest");
 
         withExposedPorts(8080);
-        waitingFor(Wait.forHttp("/lra-coordinator"));
+        withFileSystemBind(sharedObjectStorePath, "/shared-objectstore", BindMode.READ_WRITE);
+        withEnv("JAVA_OPTS", "-Dcom.arjuna.ats.arjuna.objectstore.objectStoreDir=/shared-objectstore");
+        waitingFor(Wait.forHttp("/lra-coordinator/start")
+                .forPort(8080)
+                .forStatusCodeMatching(status -> status == 404)
+                .withStartupTimeout(Duration.ofSeconds(60)));
 
-        // Traefik labels for Docker provider
-        // One router+service per coordinator instance
         String serviceName = "lra-coordinator-" + id;
-
         withLabel("traefik.enable", "true");
         withLabel("traefik.http.services." + serviceName + ".loadbalancer.server.port", "8080");
         withLabel("traefik.http.routers." + serviceName + ".rule", "PathPrefix(`/lra-coordinator`)");
-        withLabel("traefik.http.routers." + serviceName + ".entrypoints", "http");
-        withLabel("traefik.http.routers." + serviceName + ".service", serviceName);
+        withLabel("traefik.http.routers." + serviceName + ".priority", "10");
     }
 }

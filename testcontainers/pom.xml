@@ -4,162 +4,143 @@
    SPDX short identifier: Apache-2.0
   -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>org.jboss.narayana.lra</groupId>
-        <artifactId>lra-parent</artifactId>
-        <version>1.0.3.Final-SNAPSHOT</version>
-        <relativePath>../pom.xml</relativePath>
-    </parent>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.jboss.narayana.lra</groupId>
+    <artifactId>lra-parent</artifactId>
+    <version>1.0.3.Final-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
 
-    <artifactId>lra-test-containers</artifactId>
-    <name>LRA tests: Arquillian extension</name>
-    <description>Arquillian extensions needed for LRA tests to work</description>
+  <artifactId>lra-test-containers</artifactId>
+  <name>LRA tests: TestContainer extension</name>
+  <description>TestContainer extensions needed for LRA tests to work</description>
 
-    <dependencies>
-        <!-- MicroProfile dependencies -->
-        <dependency>
-            <groupId>org.eclipse.microprofile.lra</groupId>
-            <artifactId>microprofile-lra-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.microprofile.lra</groupId>
-            <artifactId>microprofile-lra-tck</artifactId>
-        </dependency>
+  <properties>
+    <maven.test.skip>false</maven.test.skip>
+    <skipITs>false</skipITs>
+    <skipTests>false</skipTests>
+  </properties>
 
-        <!-- Narayana dependencies -->
-        <dependency>
-            <groupId>org.jboss.narayana.lra</groupId>
-            <artifactId>narayana-lra</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.narayana.lra</groupId>
-            <artifactId>lra-coordinator-jar</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.jboss.narayana.lra</groupId>
-            <artifactId>lra-client</artifactId>
-        </dependency>
+  <dependencies>
+    <!-- MicroProfile dependencies -->
+    <dependency>
+      <groupId>org.eclipse.microprofile.lra</groupId>
+      <artifactId>microprofile-lra-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.microprofile.lra</groupId>
+      <artifactId>microprofile-lra-tck</artifactId>
+    </dependency>
 
-        <!-- Arquillian Maven Resolver -->
-<!--        <dependency>-->
-<!--            <groupId>org.jboss.shrinkwrap.resolver</groupId>-->
-<!--            <artifactId>shrinkwrap-resolver-api</artifactId>-->
-<!--            <scope>compile</scope>-->
-<!--        </dependency>-->
-<!--        <dependency>-->
-<!--            <groupId>org.jboss.shrinkwrap.resolver</groupId>-->
-<!--            <artifactId>shrinkwrap-resolver-impl-maven</artifactId>-->
-<!--            <scope>compile</scope>-->
-<!--        </dependency>-->
-<!--        <dependency>-->
-<!--            <groupId>org.jboss.arquillian.junit</groupId>-->
-<!--            <artifactId>arquillian-junit-container</artifactId>-->
-<!--            <scope>compile</scope>-->
-<!--        </dependency>-->
-<!--        <dependency>-->
-<!--            <groupId>org.jboss.shrinkwrap.resolver</groupId>-->
-<!--            <artifactId>shrinkwrap-resolver-impl-maven-archive</artifactId>-->
-<!--            <scope>compile</scope>-->
-<!--        </dependency>-->
+    <!-- Narayana dependencies -->
+    <dependency>
+      <groupId>org.jboss.narayana.lra</groupId>
+      <artifactId>narayana-lra</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.narayana.lra</groupId>
+      <artifactId>lra-coordinator-jar</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.narayana.lra</groupId>
+      <artifactId>lra-client</artifactId>
+    </dependency>
 
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>compile</scope>
-        </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <scope>compile</scope>
+    </dependency>
 
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>1.21.3</version>
-            <scope>test</scope>
-        </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>1.21.3</version>
+      <scope>test</scope>
+    </dependency>
 
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers</artifactId>
-            <version>1.21.3</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>1.21.3</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>42.7.8</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.13.2</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>5.12.2</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>1.21.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>1.21.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.8</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>2.13.2</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.12.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
 
-    <profiles>
-        <profile>
-            <id>do-not-start-lra-coordinator</id>
-            <activation>
-                <property>
-                    <name>!lra.coordinator</name>
-                </property>
-            </activation>
-            <properties>
-                <lra.coordinator.exec.plugin.phase>none</lra.coordinator.exec.plugin.phase>
-            </properties>
-        </profile>
-    </profiles>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <useModulePath>false</useModulePath>
+          <includes>
+            <include>**/*Test.java</include>
+          </includes>
+          <excludedGroups>integration</excludedGroups>
+        </configuration>
+      </plugin>
 
-    <build>
-        <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <includes>
+            <include>**/*IT.java</include>
+            <include>**/*ITCase.java</include>
+          </includes>
+          <useModulePath>false</useModulePath>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 
-            <!-- Make sure Surefire does NOT run your integration tests -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
-                <configuration>
-                    <useModulePath>false</useModulePath>
-                    <!-- Optional: exclude IT tests -->
-                    <excludedGroups>integration</excludedGroups>
-                </configuration>
-            </plugin>
-
-            <!-- Failsafe runs integration tests AFTER package phase -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.2.5</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <includes>
-                        <!-- Typical Failsafe naming -->
-                        <include>**/*IT.java</include>
-                        <include>**/*ITCase.java</include>
-                    </includes>
-                    <useModulePath>false</useModulePath>
-                </configuration>
-            </plugin>
-
-        </plugins>
-    </build>
+  <profiles>
+    <profile>
+      <id>do-not-start-lra-coordinator</id>
+      <activation>
+        <property>
+          <name>!lra.coordinator</name>
+        </property>
+      </activation>
+      <properties>
+        <lra.coordinator.exec.plugin.phase>none</lra.coordinator.exec.plugin.phase>
+      </properties>
+    </profile>
+  </profiles>
 </project>

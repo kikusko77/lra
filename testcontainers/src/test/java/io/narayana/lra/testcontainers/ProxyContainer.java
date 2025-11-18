@@ -12,16 +12,19 @@ public class ProxyContainer extends GenericContainer<ProxyContainer> {
         withNetwork(net);
         withExposedPorts(8080);
 
-        // Traefik needs access to the Docker socket to discover containers
         withFileSystemBind("/var/run/docker.sock", "/var/run/docker.sock", BindMode.READ_ONLY);
 
-        // Configure Traefik via CLI arguments
         withCommand(
                 "--providers.docker=true",
                 "--providers.docker.endpoint=unix:///var/run/docker.sock",
                 "--providers.docker.exposedByDefault=false",
-                "--entrypoints.http.address=:8080"
-        );
+                "--entrypoints.http.address=:8080",
+                "--api.insecure=true",
+                "--api.dashboard=true",
+                "--entrypoints.traefik.address=:9999",
+                "--log.level=DEBUG");
+
+        withLogConsumer(outputFrame -> System.out.print("TRAEFIK: " + outputFrame.getUtf8String()));
     }
 
     public String getUrl() {
