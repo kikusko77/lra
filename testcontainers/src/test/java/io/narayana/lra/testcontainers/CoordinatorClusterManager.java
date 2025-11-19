@@ -40,6 +40,22 @@ public class CoordinatorClusterManager {
         coordinators.add(c);
     }
 
+    public void stopCoordinator(String id) {
+        LraCoordinatorContainer toStop = coordinators.stream()
+                .filter(c -> id.equals(c.getId()))
+                .findFirst()
+                .orElse(null);
+
+        if (toStop == null) {
+            System.out.println("No coordinator found with id: " + id);
+            return;
+        }
+
+        System.out.println("Stopping coordinator " + id + " (containerId=" + toStop.getContainerId() + ")");
+        toStop.stop();
+        coordinators.remove(toStop);
+    }
+
     public String getProxyUrl() {
         return proxy.getUrl() + "/lra-coordinator";
     }
