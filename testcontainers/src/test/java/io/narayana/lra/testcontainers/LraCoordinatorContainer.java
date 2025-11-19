@@ -7,8 +7,11 @@ import org.testcontainers.containers.wait.strategy.Wait;
 
 public class LraCoordinatorContainer extends GenericContainer<LraCoordinatorContainer> {
 
+    private final String id;
+
     public LraCoordinatorContainer(String id, String sharedObjectStorePath) {
         super("quay.io/jbosstm/lra-coordinator:latest");
+        this.id = id;
 
         withExposedPorts(8080);
         withFileSystemBind(sharedObjectStorePath, "/shared-objectstore", BindMode.READ_WRITE);
@@ -23,5 +26,9 @@ public class LraCoordinatorContainer extends GenericContainer<LraCoordinatorCont
         withLabel("traefik.http.services." + serviceName + ".loadbalancer.server.port", "8080");
         withLabel("traefik.http.routers." + serviceName + ".rule", "PathPrefix(`/lra-coordinator`)");
         withLabel("traefik.http.routers." + serviceName + ".priority", "10");
+    }
+
+    public String getId() {
+        return id;
     }
 }
