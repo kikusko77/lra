@@ -93,6 +93,7 @@ public class ServerLRAFilter implements ContainerRequestFilter, ContainerRespons
     @Inject
     private LRAParticipantRegistry lraParticipantRegistry;
 
+    @Inject
     private NarayanaLRAClient lraClient;
 
     @Inject

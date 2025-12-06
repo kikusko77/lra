@@ -81,6 +81,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
+import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.lra.annotation.AfterLRA;
 import org.eclipse.microprofile.lra.annotation.Compensate;
 import org.eclipse.microprofile.lra.annotation.Complete;
@@ -395,6 +396,7 @@ public class NarayanaLRAClient implements Closeable {
      * @return LRA id as URL
      * @throws WebApplicationException thrown when start of the LRA failed
      */
+    @Retry(retryOn = WebApplicationException.class)
     public URI startLRA(URI parentLRA, String clientID, Long timeout, ChronoUnit unit, boolean verbose)
             throws WebApplicationException {
         if (coordinatorCount > 1 && !lbMethodValid) {

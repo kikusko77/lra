@@ -65,6 +65,11 @@
       <version>${version.io.smallrye.smallrye-stork}</version>
     </dependency>
     <dependency>
+      <groupId>io.smallrye</groupId>
+      <artifactId>smallrye-fault-tolerance</artifactId>
+      <version>${version.io.smallrye.smalrye-fault-tolerance}</version>
+    </dependency>
+    <dependency>
       <groupId>org.jboss.narayana.lra</groupId>
       <artifactId>lra-service-base</artifactId>
     </dependency>
