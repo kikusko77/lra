@@ -108,6 +108,12 @@ public class Coordinator extends Application {
 
     private final LRAService lraService;
     private final RecoveryCoordinator recoveryCoordinator;
+    private static final java.util.concurrent.atomic.AtomicInteger HOLD_REMAINING = new java.util.concurrent.atomic.AtomicInteger(
+            0);
+    private static final java.util.concurrent.atomic.AtomicBoolean HOLD_ENABLED = new java.util.concurrent.atomic.AtomicBoolean(
+            false);
+    private static final java.util.concurrent.atomic.AtomicLong HOLD_MS = new java.util.concurrent.atomic.AtomicLong(60000L);
+    private static volatile String HOLD_ONLY_CLIENT = "";
 
     public Coordinator() {
         lraService = LRARecoveryModule.getService();
@@ -324,6 +330,8 @@ public class Coordinator extends Application {
         }
 
         Current.push(lraId);
+
+        maybeHoldAfterCurrentPush(clientId, lraId);
 
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder().add("lraId", lraId.toASCIIString()).build();
@@ -711,6 +719,34 @@ public class Coordinator extends Application {
                 .build();
     }
 
+    @POST
+    @Path("inject/hold-after-current-push")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response injectHoldAfterCurrentPush(
+            @QueryParam("ms") @DefaultValue("60000") long ms,
+            @QueryParam("times") @DefaultValue("1") int times,
+            @QueryParam("clientId") @DefaultValue("") String clientId) {
+        HOLD_MS.set(ms);
+        HOLD_ONLY_CLIENT = clientId == null ? "" : clientId.trim();
+        HOLD_REMAINING.set(Math.max(0, times));
+        HOLD_ENABLED.set(true);
+        return Response.ok().build();
+    }
+
+    @POST
+    @Path("inject/reset")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response injectReset() {
+        HOLD_ENABLED.set(false);
+        HOLD_ONLY_CLIENT = "";
+        HOLD_MS.set(60000L);
+        HOLD_REMAINING.set(0);
+
+        String msg = "inject reset done";
+        LRALogger.logger.warn(msg);
+        return Response.ok(msg).build();
+    }
+
     private Response buildResponse(String status, String apiVersion, String mediaType) {
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder()
@@ -754,6 +790,31 @@ public class Coordinator extends Application {
             throw new WebApplicationException(errMsg, Response.status(BAD_REQUEST)
                     .entity(errMsg)
                     .build());
+        }
+    }
+
+    private void maybeHoldAfterCurrentPush(String clientId, URI lraId) {
+        if (!HOLD_ENABLED.get()) {
+            return;
+        }
+
+        String only = HOLD_ONLY_CLIENT;
+        if (only != null && !only.isBlank() && (clientId == null || !only.equals(clientId))) {
+            return;
+        }
+
+        int before = HOLD_REMAINING.getAndUpdate(v -> v > 0 ? v - 1 : 0);
+        if (before <= 0)
+            return;
+
+        long ms = HOLD_MS.get();
+        LRALogger.logger.warnf("INJECT: holding /start response after Current.push for %d ms (clientId=%s, lraId=%s)",
+                ms, clientId, lraId);
+
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 }
