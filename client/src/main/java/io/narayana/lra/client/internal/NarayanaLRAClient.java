@@ -924,7 +924,7 @@ public class NarayanaLRAClient implements Closeable {
     }
 
     @Retry(retryOn = WebApplicationException.class)
-    private void endLRA(URI lra, boolean confirm, String compensator, String userData) throws WebApplicationException {
+    public void endLRA(URI lra, boolean confirm, String compensator, String userData) throws WebApplicationException {
         Response response;
 
         lraTracef(lra, "%s LRA", confirm ? "close" : "compensate");
