@@ -108,7 +108,7 @@ public class Coordinator extends Application {
 
     private final LRAService lraService;
     private final RecoveryCoordinator recoveryCoordinator;
-    private static final java.util.concurrent.atomic.AtomicInteger HOLD_REMAINING = new java.util.concurrent.atomic.AtomicInteger(
+    private static final java.util.concurrent.atomic.AtomicInteger TIMEOUT_COUNT = new java.util.concurrent.atomic.AtomicInteger(
             0);
     private static final java.util.concurrent.atomic.AtomicBoolean HOLD_ENABLED = new java.util.concurrent.atomic.AtomicBoolean(
             false);
@@ -723,12 +723,12 @@ public class Coordinator extends Application {
     @Path("inject/hold-after-current-push")
     @Produces(MediaType.TEXT_PLAIN)
     public Response injectHoldAfterCurrentPush(
-            @QueryParam("ms") @DefaultValue("60000") long ms,
-            @QueryParam("times") @DefaultValue("1") int times,
+            @QueryParam("sleepTime") @DefaultValue("60000") long sleepTime,
+            @QueryParam("timeoutCount") @DefaultValue("1") int timeoutCount,
             @QueryParam("clientId") @DefaultValue("") String clientId) {
-        HOLD_MS.set(ms);
+        HOLD_MS.set(sleepTime);
         HOLD_ONLY_CLIENT = clientId == null ? "" : clientId.trim();
-        HOLD_REMAINING.set(Math.max(0, times));
+        TIMEOUT_COUNT.set(Math.max(0, timeoutCount));
         HOLD_ENABLED.set(true);
         return Response.ok().build();
     }
@@ -740,7 +740,7 @@ public class Coordinator extends Application {
         HOLD_ENABLED.set(false);
         HOLD_ONLY_CLIENT = "";
         HOLD_MS.set(60000L);
-        HOLD_REMAINING.set(0);
+        TIMEOUT_COUNT.set(0);
 
         String msg = "inject reset done";
         LRALogger.logger.warn(msg);
@@ -803,7 +803,7 @@ public class Coordinator extends Application {
             return;
         }
 
-        int before = HOLD_REMAINING.getAndUpdate(v -> v > 0 ? v - 1 : 0);
+        int before = TIMEOUT_COUNT.getAndUpdate(v -> v > 0 ? v - 1 : 0);
         if (before <= 0)
             return;
 
