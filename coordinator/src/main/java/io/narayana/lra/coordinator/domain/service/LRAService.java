@@ -14,7 +14,12 @@ import static java.util.stream.Collectors.toList;
 import com.arjuna.ats.arjuna.common.Uid;
 import com.arjuna.ats.arjuna.coordinator.ActionStatus;
 import com.arjuna.ats.arjuna.coordinator.BasicAction;
+import com.arjuna.ats.arjuna.exceptions.ObjectStoreException;
+import com.arjuna.ats.arjuna.objectstore.RecoveryStore;
+import com.arjuna.ats.arjuna.objectstore.StoreManager;
 import com.arjuna.ats.arjuna.recovery.RecoveryManager;
+import com.arjuna.ats.arjuna.state.InputObjectState;
+import com.arjuna.ats.internal.arjuna.common.UidHelper;
 import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.model.LRAParticipantRecord;
@@ -24,11 +29,13 @@ import io.narayana.lra.logging.LRALogger;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
@@ -263,6 +270,24 @@ public class LRAService {
     }
 
     public synchronized LongRunningAction startLRA(String baseUri, URI parentLRA, String clientId, Long timelimit) {
+
+        LongRunningAction existing = findActiveOriginalInMemory(clientId, parentLRA);
+        if (existing != null) {
+            return existing;
+        }
+
+        try {
+            LongRunningAction fromStore = findActiveOriginalInObjectStore(clientId, parentLRA);
+            if (fromStore != null) {
+                addTransaction(fromStore);
+                return fromStore;
+            }
+        } catch (Exception e) {
+            LRALogger.logger.warnf(e,
+                    "startLRA: lookup in object store failed, will create new LRA (clientId=%s parent=%s)",
+                    clientId, parentLRA);
+        }
+
         LongRunningAction lra;
         int status;
 
@@ -498,5 +523,117 @@ public class LRAService {
     private List<LRAData> getDataByStatus(Map<URI, LongRunningAction> lrasToFilter, LRAStatus status) {
         return lrasToFilter.values().stream().filter(t -> t.getLRAStatus() == status)
                 .map(LongRunningAction::getLRAData).collect(toList());
+    }
+
+    public LongRunningAction findActiveOriginalInObjectStore(String clientId, URI parentLRA)
+            throws IOException, ObjectStoreException {
+
+        //db entries
+        RecoveryStore store = StoreManager.getRecoveryStore();
+
+        InputObjectState uids = new InputObjectState();
+        //store locally all ids from objectstore
+        boolean ok = store.allObjUids(LongRunningAction.getType(), uids);
+        if (!ok) {
+            LRALogger.logger.warnf(
+                    "findActiveOriginalInObjectStore: allObjUids returned false for type='%s'",
+                    LongRunningAction.getType());
+            return null;
+        }
+
+        Uid uid;
+
+        while ((uid = UidHelper.unpackFrom(uids)).notEquals(Uid.nullUid())) {
+
+            LongRunningAction lra = new LongRunningAction(this, uid);
+
+            boolean activated;
+            try {
+                //load fields by uid
+                activated = lra.activate();
+            } catch (Exception e) {
+                LRALogger.logger.warnf(
+                        e,
+                        "OBJECTSTORE: activate threw for uid=%s",
+                        uid);
+                continue;
+            }
+
+            if (!activated) {
+                LRALogger.logger.debugf(
+                        "OBJECTSTORE: activate=false for uid=%s",
+                        uid);
+                continue;
+            }
+
+            boolean clientMatches = clientId != null && clientId.equals(lra.getClientId());
+            boolean finishedOk = !lra.isFinished();
+            boolean parentMatches = sameParent(lra.getParentId(), parentLRA);
+
+            if (clientMatches && finishedOk && parentMatches) {
+                LRALogger.logger.infof(
+                        "OBJECTSTORE MATCH -> addTransaction+return lraId=%s uid=%s",
+                        lra.getId(), uid);
+                addTransaction(lra);
+                return lra;
+            }
+        }
+
+        LRALogger.logger.infof(
+                "findActiveOriginalInObjectStore: NO MATCH for clientId='%s', parentLRA='%s'",
+                clientId, parentLRA);
+
+        return null;
+    }
+
+    private LongRunningAction findActiveOriginalInMemory(String clientId, URI parentLRA) {
+
+        for (LongRunningAction lra : lras.values()) {
+            boolean clientMatches = clientId != null && clientId.equals(lra.getClientId());
+            boolean finishedOk = !lra.isFinished();
+            boolean parentMatches = sameParent(lra.getParentId(), parentLRA);
+
+            if (clientMatches && finishedOk && parentMatches) {
+                LRALogger.logger.infof("ACTIVE MATCH -> returning lraId=%s", lra.getId());
+                return lra;
+            }
+        }
+
+        for (LongRunningAction lra : recoveringLRAs.values()) {
+            boolean clientMatches = clientId != null && clientId.equals(lra.getClientId());
+            boolean finishedOk = !lra.isFinished();
+            boolean parentMatches = sameParent(lra.getParentId(), parentLRA);
+
+            if (clientMatches && finishedOk && parentMatches) {
+                LRALogger.logger.infof("RECOVERING MATCH -> returning lraId=%s", lra.getId());
+                return lra;
+            }
+        }
+
+        return null;
+    }
+
+    private boolean sameParent(URI a, URI b) {
+        if (a == null && b == null) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+
+        String auid = null;
+        String buid = null;
+        try {
+            auid = LRAConstants.getLRAUid(a);
+        } catch (Exception e) {
+            LRALogger.logger.warnf(e, "sameParent: failed getLRAUid(a) for a='%s'", a);
+        }
+        try {
+            buid = LRAConstants.getLRAUid(b);
+        } catch (Exception e) {
+            LRALogger.logger.warnf(e, "sameParent: failed getLRAUid(b) for b='%s'", b);
+        }
+
+        return Objects.equals(auid, buid);
     }
 }

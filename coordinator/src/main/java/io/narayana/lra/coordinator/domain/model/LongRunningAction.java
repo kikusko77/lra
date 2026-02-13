@@ -442,7 +442,7 @@ public class LongRunningAction extends BasicAction {
         }
     }
 
-    boolean isFinished() {
+    public boolean isFinished() {
         switch (status) {
             case Active:
                 return false; // this is not covered by the default arm of the switch if there are no participants
