@@ -271,24 +271,6 @@ public class LRAService {
     }
 
     public synchronized LongRunningAction startLRA(String baseUri, URI parentLRA, String clientId, Long timelimit) {
-
-        LongRunningAction existing = findActiveOriginalInMemory(clientId, parentLRA);
-        if (existing != null) {
-            return existing;
-        }
-
-        try {
-            LongRunningAction fromStore = findActiveOriginalInObjectStore(clientId, parentLRA);
-            if (fromStore != null) {
-                addTransaction(fromStore);
-                return fromStore;
-            }
-        } catch (Exception e) {
-            LRALogger.logger.warnf(e,
-                    "startLRA: lookup in object store failed, will create new LRA (clientId=%s parent=%s)",
-                    clientId, parentLRA);
-        }
-
         LongRunningAction lra;
         int status;
 
