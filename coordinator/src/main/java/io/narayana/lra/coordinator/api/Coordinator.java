@@ -65,6 +65,8 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -351,7 +353,8 @@ public class Coordinator extends Application {
     @PUT
     @Path("{LraId}/renew")
     @Operation(summary = "Update the TimeLimit for an existing LRA", description = "LRAs can be automatically cancelled if they aren't closed or cancelled before the TimeLimit "
-            + "specified at creation time is reached. The time limit can be updated.")
+            + "specified at creation time is reached. The time limit can be updated to postpone (extend) the timeout, but cannot be shortened. "
+            + "If the new timeout is earlier than the current one, the request will be ignored and return 200 OK without making any changes.")
     @APIResponses({
             @APIResponse(responseCode = "200", description = "If the LRA time limit has been updated", content = @Content(schema = @Schema(implementation = String.class)), headers = {
                     @Header(ref = LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) }),
@@ -373,7 +376,9 @@ public class Coordinator extends Application {
     @GET
     @Path("nested/{NestedLraId}/status")
     public Response getNestedLRAStatus(@PathParam("NestedLraId") String nestedLraId) {
-        if (!lraService.hasTransaction(nestedLraId)) {
+        // needed to decode string passed from clients
+        String decodedURL = URLDecoder.decode(nestedLraId, StandardCharsets.UTF_8);
+        if (!lraService.hasTransaction(decodedURL)) {
             // it must have compensated
             return Response.ok(ParticipantStatus.Compensated.name()).build();
         }
@@ -779,10 +784,12 @@ public class Coordinator extends Application {
 
     private URI toURI(String lraId) {
         URL url;
+        // needed to decode string passed from clients
+        String decodedURL = URLDecoder.decode(lraId, StandardCharsets.UTF_8);
 
         try {
             // see if it already in the correct format
-            url = new URL(lraId);
+            url = new URL(decodedURL);
             url.toURI();
         } catch (Exception e) {
             try {
