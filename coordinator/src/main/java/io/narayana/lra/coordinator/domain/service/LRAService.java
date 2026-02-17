@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -525,9 +526,7 @@ public class LRAService {
                 .map(LongRunningAction::getLRAData).collect(toList());
     }
 
-    public LongRunningAction findActiveOriginalInObjectStore(String clientId, URI parentLRA)
-            throws IOException, ObjectStoreException {
-
+    private List<LongRunningAction> loadLRAsFromObjectStore() throws IOException, ObjectStoreException {
         //db entries
         RecoveryStore store = StoreManager.getRecoveryStore();
 
@@ -536,36 +535,40 @@ public class LRAService {
         boolean ok = store.allObjUids(LongRunningAction.getType(), uids);
         if (!ok) {
             LRALogger.logger.warnf(
-                    "findActiveOriginalInObjectStore: allObjUids returned false for type='%s'",
+                    "loadLRAsFromObjectStore: allObjUids returned false for type='%s'",
                     LongRunningAction.getType());
-            return null;
+            return List.of();
         }
 
+        List<LongRunningAction> result = new ArrayList<>();
         Uid uid;
 
         while ((uid = UidHelper.unpackFrom(uids)).notEquals(Uid.nullUid())) {
-
             LongRunningAction lra = new LongRunningAction(this, uid);
-
+            //load fields by uid
             boolean activated;
             try {
-                //load fields by uid
                 activated = lra.activate();
             } catch (Exception e) {
-                LRALogger.logger.warnf(
-                        e,
-                        "OBJECTSTORE: activate threw for uid=%s",
-                        uid);
+                LRALogger.logger.warnf(e, "OBJECTSTORE: activate threw for uid=%s", uid);
                 continue;
             }
 
             if (!activated) {
-                LRALogger.logger.debugf(
-                        "OBJECTSTORE: activate=false for uid=%s",
-                        uid);
+                LRALogger.logger.debugf("OBJECTSTORE: activate=false for uid=%s", uid);
                 continue;
             }
 
+            result.add(lra);
+        }
+
+        return result;
+    }
+
+    public LongRunningAction findActiveOriginalInObjectStore(String clientId, URI parentLRA)
+            throws IOException, ObjectStoreException {
+
+        for (LongRunningAction lra : loadLRAsFromObjectStore()) {
             boolean clientMatches = clientId != null && clientId.equals(lra.getClientId());
             boolean finishedOk = !lra.isFinished();
             boolean parentMatches = sameParent(lra.getParentId(), parentLRA);
@@ -573,7 +576,7 @@ public class LRAService {
             if (clientMatches && finishedOk && parentMatches) {
                 LRALogger.logger.infof(
                         "OBJECTSTORE MATCH -> addTransaction+return lraId=%s uid=%s",
-                        lra.getId(), uid);
+                        lra.getId(), lra.get_uid());
                 addTransaction(lra);
                 return lra;
             }
@@ -635,5 +638,20 @@ public class LRAService {
         }
 
         return Objects.equals(auid, buid);
+    }
+
+    public List<String> getActiveLraIdsFromObjectStore() throws IOException, ObjectStoreException {
+        List<String> ids = new ArrayList<>();
+
+        for (LongRunningAction lra : loadLRAsFromObjectStore()) {
+            if (!lra.isFinished() && lra.getLRAStatus() == LRAStatus.Active) {
+                URI id = lra.getId();
+                if (id != null) {
+                    ids.add(id.toASCIIString());
+                }
+            }
+        }
+
+        return ids;
     }
 }

@@ -747,6 +747,20 @@ public class Coordinator extends Application {
         return Response.ok(msg).build();
     }
 
+    @GET
+    @Path("/active/ids")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getActiveLraIds() {
+        try {
+            List<String> ids = lraService.getActiveLraIdsFromObjectStore();
+            return Response.ok(ids).build();
+        } catch (Exception e) {
+            return Response.status(INTERNAL_SERVER_ERROR)
+                    .entity(e.getMessage())
+                    .build();
+        }
+    }
+
     private Response buildResponse(String status, String apiVersion, String mediaType) {
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder()
