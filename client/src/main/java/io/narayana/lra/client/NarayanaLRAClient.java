@@ -36,8 +36,6 @@ import io.smallrye.stork.api.ServiceDefinition;
 import io.smallrye.stork.api.config.ConfigWithType;
 import io.smallrye.stork.servicediscovery.staticlist.StaticConfiguration;
 import jakarta.enterprise.context.RequestScoped;
-import jakarta.enterprise.inject.Instance;
-import jakarta.inject.Inject;
 import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
@@ -152,9 +150,6 @@ public class NarayanaLRAClient implements Closeable {
     private boolean supportsFailover;
     private boolean storkInitialised;
 
-    @Inject
-    Instance<NarayanaLRAClient> self; // proxy to avoid self-invocation bypassing interceptors
-
     /**
      * Creating LRA client. The URL of the LRA coordinator will be taken
      * from system property {@link NarayanaLRAClient#LRA_COORDINATOR_URL_KEY}.
@@ -202,11 +197,6 @@ public class NarayanaLRAClient implements Closeable {
      */
     public NarayanaLRAClient(String coordinatorUrl) {
         clusterConfig(toURI(coordinatorUrl));
-    }
-
-    public URI startLRAWithRetryFlag(URI parentLRA, String clientID, Long timeout, ChronoUnit unit, boolean verbose) {
-        // Call through CDI proxy so @Retry is applied
-        return self.get().startLRA(parentLRA, clientID, timeout, unit, verbose);
     }
 
     private URI toURI(String coordinatorUrl) {
