@@ -539,7 +539,6 @@ public class NarayanaLRAClient implements Closeable {
                 null);
     }
 
-    @Retry(retryOn = WebApplicationException.class)
     public URI joinLRA(URI lraId, Long timeLimit,
             URI compensateUri, URI completeUri, URI forgetUri, URI leaveUri, URI afterUri, URI statusUri,
             StringBuilder compensatorData) throws WebApplicationException {
@@ -559,7 +558,6 @@ public class NarayanaLRAClient implements Closeable {
      * @return a recovery URL for this enlistment
      * @throws WebApplicationException if the LRA coordinator failed to enlist the participant
      */
-    @Retry(retryOn = WebApplicationException.class)
     public URI joinLRA(URI lraId, Long timeLimit,
             URI participantUri, StringBuilder compensatorData) throws WebApplicationException {
         validateURI(participantUri, false, "Invalid participant URL: %s");
@@ -1067,6 +1065,7 @@ public class NarayanaLRAClient implements Closeable {
         return enlistCompensator(lraUri, timelimit, linkHeaderValue.toString(), compensatorData);
     }
 
+    @Retry(retryOn = WebApplicationException.class)
     public URI enlistCompensator(URI uri, Long timelimit, String linkHeader, StringBuilder compensatorData) {
         // register with the coordinator
         URL lraId = null;
