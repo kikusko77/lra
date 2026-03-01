@@ -115,7 +115,6 @@ public class Coordinator extends Application {
     private static final java.util.concurrent.atomic.AtomicBoolean HOLD_ENABLED = new java.util.concurrent.atomic.AtomicBoolean(
             false);
     private static final java.util.concurrent.atomic.AtomicLong HOLD_MS = new java.util.concurrent.atomic.AtomicLong(60000L);
-    private static volatile String HOLD_ONLY_CLIENT = "";
 
     public Coordinator() {
         lraService = LRARecoveryModule.getService();
@@ -333,7 +332,7 @@ public class Coordinator extends Application {
 
         Current.push(lraId);
 
-        maybeHoldAfterCurrentPush(clientId, lraId);
+        timeout(lraId);
 
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder().add("lraId", lraId.toASCIIString()).build();
@@ -678,6 +677,8 @@ public class Coordinator extends Application {
             recoveryUrlValue = recoveryUrl.toString();
         }
 
+        timeout(lraId);
+
         try {
             return Response.status(status)
                     .entity(recoveryUrlValue)
@@ -725,14 +726,12 @@ public class Coordinator extends Application {
     }
 
     @POST
-    @Path("inject/hold-after-current-push")
+    @Path("inject/hold")
     @Produces(MediaType.TEXT_PLAIN)
-    public Response injectHoldAfterCurrentPush(
+    public Response injectTimeout(
             @QueryParam("sleepTime") @DefaultValue("60000") long sleepTime,
-            @QueryParam("timeoutCount") @DefaultValue("1") int timeoutCount,
-            @QueryParam("clientId") @DefaultValue("") String clientId) {
+            @QueryParam("timeoutCount") @DefaultValue("1") int timeoutCount) {
         HOLD_MS.set(sleepTime);
-        HOLD_ONLY_CLIENT = clientId == null ? "" : clientId.trim();
         TIMEOUT_COUNT.set(Math.max(0, timeoutCount));
         HOLD_ENABLED.set(true);
         return Response.ok().build();
@@ -743,7 +742,6 @@ public class Coordinator extends Application {
     @Produces(MediaType.TEXT_PLAIN)
     public Response injectReset() {
         HOLD_ENABLED.set(false);
-        HOLD_ONLY_CLIENT = "";
         HOLD_MS.set(60000L);
         TIMEOUT_COUNT.set(0);
 
@@ -814,13 +812,8 @@ public class Coordinator extends Application {
         }
     }
 
-    private void maybeHoldAfterCurrentPush(String clientId, URI lraId) {
+    private void timeout(URI lraId) {
         if (!HOLD_ENABLED.get()) {
-            return;
-        }
-
-        String only = HOLD_ONLY_CLIENT;
-        if (only != null && !only.isBlank() && (clientId == null || !only.equals(clientId))) {
             return;
         }
 
@@ -829,8 +822,8 @@ public class Coordinator extends Application {
             return;
 
         long ms = HOLD_MS.get();
-        LRALogger.logger.warnf("INJECT: holding /start response after Current.push for %d ms (clientId=%s, lraId=%s)",
-                ms, clientId, lraId);
+        LRALogger.logger.warnf("INJECT: holding /start response after Current.push for %d ms (lraId=%s)",
+                ms, lraId);
 
         try {
             Thread.sleep(ms);
