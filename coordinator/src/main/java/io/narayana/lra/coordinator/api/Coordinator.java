@@ -33,6 +33,7 @@ import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.model.LongRunningAction;
 import io.narayana.lra.coordinator.domain.service.LRAService;
+import io.narayana.lra.coordinator.injectflags.InjectFlags;
 import io.narayana.lra.coordinator.internal.LRARecoveryModule;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -110,11 +111,6 @@ public class Coordinator extends Application {
 
     private final LRAService lraService;
     private final RecoveryCoordinator recoveryCoordinator;
-    private static final java.util.concurrent.atomic.AtomicInteger TIMEOUT_COUNT = new java.util.concurrent.atomic.AtomicInteger(
-            0);
-    private static final java.util.concurrent.atomic.AtomicBoolean HOLD_ENABLED = new java.util.concurrent.atomic.AtomicBoolean(
-            false);
-    private static final java.util.concurrent.atomic.AtomicLong HOLD_MS = new java.util.concurrent.atomic.AtomicLong(60000L);
 
     public Coordinator() {
         lraService = LRARecoveryModule.getService();
@@ -332,7 +328,9 @@ public class Coordinator extends Application {
 
         Current.push(lraId);
 
-        timeout(lraId);
+        if (InjectFlags.isEnabled(InjectFlags.InjectPoint.START)) {
+            System.exit(137);
+        }
 
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder().add("lraId", lraId.toASCIIString()).build();
@@ -580,6 +578,10 @@ public class Coordinator extends Application {
         // test to see if the compensator endpoints are in the body of the join request
         boolean isLink = isLink(compensatorURL);
 
+        if (InjectFlags.isEnabled(InjectFlags.InjectPoint.JOIN_BEFORE_SAVE)) {
+            System.exit(137);
+        }
+
         if (compensatorLink != null && !compensatorLink.isEmpty()) {
             StringBuilder sb = new StringBuilder();
 
@@ -677,7 +679,9 @@ public class Coordinator extends Application {
             recoveryUrlValue = recoveryUrl.toString();
         }
 
-        timeout(lraId);
+        if (InjectFlags.isEnabled(InjectFlags.InjectPoint.JOIN_AFTER_SAVE)) {
+            System.exit(137);
+        }
 
         try {
             return Response.status(status)
@@ -726,28 +730,37 @@ public class Coordinator extends Application {
     }
 
     @POST
-    @Path("inject/hold")
+    @Path("inject/{point}/enable")
     @Produces(MediaType.TEXT_PLAIN)
-    public Response injectTimeout(
-            @QueryParam("sleepTime") @DefaultValue("60000") long sleepTime,
-            @QueryParam("timeoutCount") @DefaultValue("1") int timeoutCount) {
-        HOLD_MS.set(sleepTime);
-        TIMEOUT_COUNT.set(Math.max(0, timeoutCount));
-        HOLD_ENABLED.set(true);
-        return Response.ok().build();
+    public Response enableInject(@PathParam("point") String point) {
+        try {
+            InjectFlags.InjectPoint p = InjectFlags.InjectPoint.valueOf(point.toUpperCase());
+            InjectFlags.set(p, true);
+            return Response.ok("enabled " + p).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(400).entity("Unknown inject point: " + point).build();
+        }
+    }
+
+    @POST
+    @Path("inject/{point}/disable")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response disableInject(@PathParam("point") String point) {
+        try {
+            InjectFlags.InjectPoint p = InjectFlags.InjectPoint.valueOf(point.toUpperCase());
+            InjectFlags.set(p, false);
+            return Response.ok("disabled " + p).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(400).entity("Unknown inject point: " + point).build();
+        }
     }
 
     @POST
     @Path("inject/reset")
     @Produces(MediaType.TEXT_PLAIN)
-    public Response injectReset() {
-        HOLD_ENABLED.set(false);
-        HOLD_MS.set(60000L);
-        TIMEOUT_COUNT.set(0);
-
-        String msg = "inject reset done";
-        LRALogger.logger.warn(msg);
-        return Response.ok(msg).build();
+    public Response resetInject() {
+        InjectFlags.resetAll();
+        return Response.ok("reset all").build();
     }
 
     @GET
