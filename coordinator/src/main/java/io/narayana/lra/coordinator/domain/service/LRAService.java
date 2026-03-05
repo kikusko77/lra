@@ -78,6 +78,20 @@ public class LRAService {
                     }
                 }
 
+                LongRunningAction loaded = tryActivateFromStoreByUid(uid);
+                if (loaded != null) {
+                    if (loaded.isRecovering()) {
+                        recoveringLRAs.putIfAbsent(loaded.getId(), loaded);
+                    } else {
+                        lras.putIfAbsent(loaded.getId(), loaded);
+                    }
+                    return loaded;
+                }
+
+                LRALogger.logger.errorf(
+                        "getTransaction MISS on node=%s for id=%s",
+                        System.getenv().getOrDefault("HOSTNAME", "unknown"),
+                        lraId);
                 String errorMsg = "Cannot find transaction id: " + lraId;
                 throw new NotFoundException(errorMsg,
                         Response.status(NOT_FOUND).entity(errorMsg).build());
@@ -653,5 +667,22 @@ public class LRAService {
         }
 
         return ids;
+    }
+
+    private LongRunningAction tryActivateFromStoreByUid(String uidString) {
+        try {
+            Uid uid = new Uid(uidString);
+            LongRunningAction lra = new LongRunningAction(this, uid);
+            if (lra.activate()) {
+                LRALogger.logger.warnf("OBJECTSTORE: activated uid=%s -> id=%s status=%s",
+                        uidString, lra.getId(), lra.getLRAStatus());
+                return lra;
+            }
+            LRALogger.logger.warnf("OBJECTSTORE: activate=false for uid=%s", uidString);
+            return null;
+        } catch (Exception e) {
+            LRALogger.logger.warnf(e, "OBJECTSTORE: activation threw for uid=%s", uidString);
+            return null;
+        }
     }
 }
