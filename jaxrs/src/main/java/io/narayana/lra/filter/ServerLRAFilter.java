@@ -14,7 +14,6 @@ import static io.narayana.lra.LRAConstants.LEAVE;
 import static io.narayana.lra.LRAConstants.STATUS;
 import static io.narayana.lra.LRAConstants.TIMELIMIT_PARAM_NAME;
 import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
-import static jakarta.ws.rs.core.Response.Status.SERVICE_UNAVAILABLE;
 import static org.eclipse.microprofile.lra.annotation.ws.rs.LRA.LRA_HTTP_CONTEXT_HEADER;
 import static org.eclipse.microprofile.lra.annotation.ws.rs.LRA.LRA_HTTP_PARENT_CONTEXT_HEADER;
 import static org.eclipse.microprofile.lra.annotation.ws.rs.LRA.LRA_HTTP_RECOVERY_HEADER;
@@ -419,29 +418,9 @@ public class ServerLRAFilter implements ContainerRequestFilter, ContainerRespons
                     // The coordinator needs to hold a lock to enlist an participant. This lock is only waited on for a small amount of
                     // time (potentially even zero time). This means if multiple participants try to enlist at the same time, enlistment
                     // may fail. We therefore re-try a configurable amount of times.
-                    for (int i = 0;; i++) {
-                        try {
-                            recoveryUrl = getLRAClient().enlistCompensator(lraId, timeLimit, compensatorLink,
-                                    previousParticipantData);
-                            break;
-                        } catch (WebApplicationException e) {
 
-                            String logMessage = "The coordinator service is unavailable; failing in enlisting the compensator for "
-                                    + lraId +
-                                    ", ENLIST_PARTICIPANT_CLIENT_MAX_RETRY (via MP config property \"lra.participant.client.max.retry\") set to "
-                                    +
-                                    enlistMaxRetries + ". ";
-
-                            if (e.getResponse().getStatus() != SERVICE_UNAVAILABLE.getStatusCode() || i >= enlistMaxRetries) {
-
-                                LRALogger.logger.warn(logMessage + "Not retrying.");
-
-                                throw e;
-                            }
-
-                            LRALogger.logger.warn(logMessage + " Attempt " + (i + 1) + " of " + enlistMaxRetries + ".");
-                        }
-                    }
+                    recoveryUrl = getLRAClient().enlistCompensator(lraId, timeLimit, compensatorLink,
+                            previousParticipantData);
 
                     if (previousParticipantData.length() != 0) {
                         // this participant has previously updated the LRAParticipantData bean so make it available for this invocation
