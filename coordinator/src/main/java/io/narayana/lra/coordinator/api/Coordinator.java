@@ -329,7 +329,7 @@ public class Coordinator extends Application {
         Current.push(lraId);
 
         if (InjectFlags.isEnabled(InjectFlags.InjectPoint.START)) {
-            System.exit(137);
+            System.exit(1);
         }
 
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
@@ -579,7 +579,7 @@ public class Coordinator extends Application {
         boolean isLink = isLink(compensatorURL);
 
         if (InjectFlags.isEnabled(InjectFlags.InjectPoint.JOIN_BEFORE_SAVE)) {
-            System.exit(137);
+            System.exit(1);
         }
 
         if (compensatorLink != null && !compensatorLink.isEmpty()) {
@@ -680,7 +680,7 @@ public class Coordinator extends Application {
         }
 
         if (InjectFlags.isEnabled(InjectFlags.InjectPoint.JOIN_AFTER_SAVE)) {
-            System.exit(137);
+            System.exit(1);
         }
 
         try {
@@ -730,9 +730,14 @@ public class Coordinator extends Application {
     }
 
     @POST
-    @Path("inject/{point}/enable")
+    @Path("inject/enable")
     @Produces(MediaType.TEXT_PLAIN)
-    public Response enableInject(@PathParam("point") String point) {
+    public Response enableInject(@QueryParam("point") String point) {
+        if (point == null || point.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Missing query param: point")
+                    .build();
+        }
         try {
             InjectFlags.InjectPoint p = InjectFlags.InjectPoint.valueOf(point.toUpperCase());
             InjectFlags.set(p, true);
@@ -743,9 +748,14 @@ public class Coordinator extends Application {
     }
 
     @POST
-    @Path("inject/{point}/disable")
+    @Path("inject/disable")
     @Produces(MediaType.TEXT_PLAIN)
-    public Response disableInject(@PathParam("point") String point) {
+    public Response disableInject(@QueryParam("point") String point) {
+        if (point == null || point.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Missing query param: point")
+                    .build();
+        }
         try {
             InjectFlags.InjectPoint p = InjectFlags.InjectPoint.valueOf(point.toUpperCase());
             InjectFlags.set(p, false);
@@ -822,26 +832,6 @@ public class Coordinator extends Application {
             throw new WebApplicationException(errMsg, Response.status(BAD_REQUEST)
                     .entity(errMsg)
                     .build());
-        }
-    }
-
-    private void timeout(URI lraId) {
-        if (!HOLD_ENABLED.get()) {
-            return;
-        }
-
-        int before = TIMEOUT_COUNT.getAndUpdate(v -> v > 0 ? v - 1 : 0);
-        if (before <= 0)
-            return;
-
-        long ms = HOLD_MS.get();
-        LRALogger.logger.warnf("INJECT: holding /start response after Current.push for %d ms (lraId=%s)",
-                ms, lraId);
-
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
         }
     }
 }
