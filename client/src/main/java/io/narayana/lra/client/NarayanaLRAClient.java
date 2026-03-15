@@ -1203,65 +1203,140 @@ public class NarayanaLRAClient implements Closeable {
     public void endLRA(URI lra, boolean confirm, String compensator, String userData) throws WebApplicationException {
         lraTracef(lra, "%s LRA", confirm ? "close" : "compensate");
 
+        URI uri = UriBuilder.fromUri(lra).replaceQuery(null).build();
+        String lraId = LRAConstants.getLRAUid(lra);
+
         try {
-            URI uri = UriBuilder.fromUri(lra).replaceQuery(null).build();
+            for (int i = 0; i < coordinatorCount; i++) {
+                URI coordinatorInstance;
 
-            // Build the CoordinatorClient using the base coordinator URL
-            CoordinatorClient client = createCoordinatorClient(LRAConstants.getLRACoordinatorUrl(uri));
+                if (i == 0) {
+                    // first try the coordinator that owns the LRA
+                    coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
+                    LRALogger.logger.infof("endLRA: first trying owner coordinator %s", coordinatorInstance);
+                } else if (coordinatorService != null) {
+                    // then try other coordinators via Stork
+                    var instance = coordinatorService.selectInstance()
+                            .await().atMost(Duration.ofSeconds(END_TIMEOUT));
 
-            // Remove query parameters from LRA ID and extract the UID
-            String lraId = LRAConstants.getLRAUid(lra);
+                    coordinatorInstance = UriBuilder.fromPath(coordinatorUrl.getPath())
+                            .scheme(instance.isSecure() ? "https" : "http")
+                            .host(instance.getHost())
+                            .port(instance.getPort())
+                            .build();
 
-            // Call the appropriate endpoint (close or cancel) asynchronously
-            Response response;
-            if (confirm) {
-                response = client.closeLRA(
-                        lraId,
-                        MediaType.TEXT_PLAIN,
-                        LRAConstants.CURRENT_API_VERSION_STRING,
-                        compensator == null ? "" : compensator,
-                        userData == null ? "" : userData)
-                        .toCompletableFuture().get(END_TIMEOUT, TimeUnit.SECONDS);
-            } else {
-                response = client.cancelLRA(
-                        lraId,
-                        MediaType.TEXT_PLAIN,
-                        LRAConstants.CURRENT_API_VERSION_STRING,
-                        compensator == null ? "" : compensator,
-                        userData == null ? "" : userData)
-                        .toCompletableFuture().get(END_TIMEOUT, TimeUnit.SECONDS);
+                    LRALogger.logger.infof("endLRA: retrying with coordinator %s", coordinatorInstance);
+                } else {
+                    // single coordinator mode, retry same one
+                    coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
+                    LRALogger.logger.infof("endLRA: retrying same coordinator %s", coordinatorInstance);
+                }
+
+                try {
+                    CoordinatorClient client = createCoordinatorClient(coordinatorInstance);
+
+                    Response response;
+                    if (confirm) {
+                        response = client.closeLRA(
+                                lraId,
+                                MediaType.TEXT_PLAIN,
+                                LRAConstants.CURRENT_API_VERSION_STRING,
+                                compensator == null ? "" : compensator,
+                                userData == null ? "" : userData)
+                                .toCompletableFuture()
+                                .get(END_TIMEOUT, TimeUnit.SECONDS);
+                    } else {
+                        response = client.cancelLRA(
+                                lraId,
+                                MediaType.TEXT_PLAIN,
+                                LRAConstants.CURRENT_API_VERSION_STRING,
+                                compensator == null ? "" : compensator,
+                                userData == null ? "" : userData)
+                                .toCompletableFuture()
+                                .get(END_TIMEOUT, TimeUnit.SECONDS);
+                    }
+
+                    if (isUnexpectedResponseStatus(response, OK, Response.Status.ACCEPTED, NOT_FOUND)) {
+                        String body = response.hasEntity() ? response.readEntity(String.class) : "";
+
+                        // retry only on 503 if failover is supported
+                        if (response.getStatus() == SERVICE_UNAVAILABLE.getStatusCode()
+                                && supportsFailover
+                                && i < coordinatorCount - 1) {
+                            LRALogger.logger.warnf(
+                                    "endLRA: coordinator %s returned 503, trying next (attempt %d/%d)",
+                                    coordinatorInstance, i + 1, coordinatorCount);
+                            continue;
+                        }
+
+                        throw new WebApplicationException(
+                                Response.status(response.getStatus()).entity(body).build());
+                    }
+
+                    if (response.getStatus() == NOT_FOUND.getStatusCode()) {
+                        throw new WebApplicationException(response);
+                    }
+
+                    // success
+                    return;
+
+                } catch (ExecutionException e) {
+                    Throwable t = e.getCause();
+
+                    if (t instanceof NotFoundException) {
+                        throw (NotFoundException) t;
+                    }
+
+                    if (t instanceof ServiceUnavailableException) {
+                        String msg = ((ServiceUnavailableException) t).getResponse().readEntity(String.class);
+                        int status = ((ServiceUnavailableException) t).getResponse().getStatus();
+
+                        if (supportsFailover && i < coordinatorCount - 1) {
+                            LRALogger.logger.warnf(
+                                    "endLRA: coordinator %s unavailable, trying next (attempt %d/%d)",
+                                    coordinatorInstance, i + 1, coordinatorCount);
+                            continue;
+                        }
+
+                        throw new WebApplicationException(Response.status(status).entity(msg).build());
+                    }
+
+                    if (t instanceof ClientErrorException) {
+                        String msg = ((ClientErrorException) t).getResponse().readEntity(String.class);
+                        int status = ((ClientErrorException) t).getResponse().getStatus();
+                        throw new WebApplicationException(Response.status(status).entity(msg).build());
+                    }
+
+                    if (supportsFailover && i < coordinatorCount - 1) {
+                        LRALogger.logger.warnf(
+                                "endLRA: coordinator %s failed with %s, trying next (attempt %d/%d)",
+                                coordinatorInstance,
+                                t != null ? t.getClass().getSimpleName() : "unknown",
+                                i + 1,
+                                coordinatorCount);
+                        continue;
+                    }
+
+                    throw new WebApplicationException(
+                            Response.status(SERVICE_UNAVAILABLE)
+                                    .entity(t != null ? t.getMessage() : "endLRA failed")
+                                    .build());
+                } catch (InterruptedException | TimeoutException e) {
+                    if (supportsFailover && i < coordinatorCount - 1) {
+                        LRALogger.logger.warnf(
+                                "endLRA: coordinator %s timed out, trying next (attempt %d/%d)",
+                                coordinatorInstance, i + 1, coordinatorCount);
+                        continue;
+                    }
+
+                    throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE)
+                            .entity("end LRA client request timed out, try again later")
+                            .build());
+                }
             }
 
-            if (isUnexpectedResponseStatus(response, OK, Response.Status.ACCEPTED, NOT_FOUND)) {
-                // let the client know the reason for the failure (it's in the entity body of the response object)
-                throw new WebApplicationException(response);
-            }
-
-            if (response.getStatus() == NOT_FOUND.getStatusCode()) {
-                throw new WebApplicationException(response);
-            }
-        } catch (ExecutionException e) {
-            Throwable t = e.getCause();
-            // Handle 404 not found
-            if (t instanceof NotFoundException) {
-                throw (NotFoundException) t;
-            }
-            if (t instanceof ServiceUnavailableException) {
-                t = (ServiceUnavailableException) t;
-                String msg = ((ServiceUnavailableException) t).getResponse().readEntity(String.class);
-                int status = ((ServiceUnavailableException) t).getResponse().getStatus();
-                throw new WebApplicationException(Response.status(status).entity(msg).build());
-            }
-            if (t instanceof ClientErrorException) {
-                t = (ClientErrorException) t;
-                String msg = ((ClientErrorException) t).getResponse().readEntity(String.class);
-                int status = ((ClientErrorException) t).getResponse().getStatus();
-                throw new WebApplicationException(Response.status(status).entity(msg).build());
-            }
-            throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE).entity(t.getMessage()).build());
-        } catch (InterruptedException | TimeoutException e) {
             throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE)
-                    .entity("end LRA client request timed out, try again later")
+                    .entity("no available coordinator for endLRA")
                     .build());
         } finally {
             Current.pop(lra);
