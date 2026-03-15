@@ -43,7 +43,6 @@ import jakarta.ws.rs.ApplicationPath;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
-import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -328,9 +327,7 @@ public class Coordinator extends Application {
 
         Current.push(lraId);
 
-        if (InjectFlags.isEnabled(InjectFlags.InjectPoint.START)) {
-            System.exit(1);
-        }
+        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.START);
 
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder().add("lraId", lraId.toASCIIString()).build();
@@ -519,11 +516,10 @@ public class Coordinator extends Application {
             @HeaderParam(LRAConstants.NARAYANA_LRA_PARTICIPANT_LINK_HEADER_NAME) @DefaultValue("") String compensator,
             @HeaderParam(LRAConstants.NARAYANA_LRA_PARTICIPANT_DATA_HEADER_NAME) @DefaultValue("") String userData) {
 
-        LRAData lraData = lraService.endLRA(toURI(lraId), true, false, compensator, userData);
-
         try {
+            LRAData lraData = lraService.endLRA(toURI(lraId), true, false, compensator, userData);
             return buildResponse(lraData.getStatus().name(), version, mediaType);
-        } catch (NotFoundException e) {
+        } catch (WebApplicationException e) {
             return Response.status(e.getResponse().getStatus()).entity(e.getMessage()).build();
         }
     }
@@ -578,9 +574,7 @@ public class Coordinator extends Application {
         // test to see if the compensator endpoints are in the body of the join request
         boolean isLink = isLink(compensatorURL);
 
-        if (InjectFlags.isEnabled(InjectFlags.InjectPoint.JOIN_BEFORE_SAVE)) {
-            System.exit(1);
-        }
+        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_BEFORE_SAVE);
 
         if (compensatorLink != null && !compensatorLink.isEmpty()) {
             StringBuilder sb = new StringBuilder();
@@ -679,9 +673,7 @@ public class Coordinator extends Application {
             recoveryUrlValue = recoveryUrl.toString();
         }
 
-        if (InjectFlags.isEnabled(InjectFlags.InjectPoint.JOIN_AFTER_SAVE)) {
-            System.exit(1);
-        }
+        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_AFTER_SAVE);
 
         try {
             return Response.status(status)

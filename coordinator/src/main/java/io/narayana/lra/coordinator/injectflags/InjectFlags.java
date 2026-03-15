@@ -10,8 +10,14 @@ public final class InjectFlags {
         START,
         JOIN_BEFORE_SAVE,
         JOIN_AFTER_SAVE,
-        CLOSE,
-        CANCEL
+        JOIN_BEFORE_DEACTIVATE,
+        JOIN_AFTER_DEACTIVATE,
+        JOIN_BEFORE_RESPONSE,
+        JOIN_AFTER_RESPONSE_APPEND,
+        END_BEFORE_SAVE,
+        END_AFTER_SAVE,
+        END_DURING_CLEANUP,
+        END_AFTER_CLEANUP
     }
 
     private static final Map<InjectPoint, AtomicBoolean> FLAGS = new EnumMap<>(InjectPoint.class);
@@ -30,6 +36,12 @@ public final class InjectFlags {
 
     public static boolean isEnabled(InjectPoint p) {
         return FLAGS.get(p).get();
+    }
+
+    public static void exitIfEnabled(InjectPoint p) {
+        if (isEnabled(p)) {
+            System.exit(1);
+        }
     }
 
     public static void resetAll() {

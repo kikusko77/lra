@@ -22,6 +22,7 @@ import io.narayana.lra.Current;
 import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.service.LRAService;
+import io.narayana.lra.coordinator.injectflags.InjectFlags;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.ws.rs.ServiceUnavailableException;
 import jakarta.ws.rs.WebApplicationException;
@@ -842,9 +843,11 @@ public class LongRunningAction extends BasicAction {
                 participant = doEnlistParticipant(coordinatorUrl, participantUrl, recoveryUrlBase, timeLimit,
                         compensatorData, version);
                 if (participant != null) {
+                    InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_BEFORE_DEACTIVATE);
                     // need to remember that there is a new participant
                     if (deactivate()) { // if it fails the superclass will have logged a warning
                         savedIntentionList = true; // need this clean up if the LRA times out
+                        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_AFTER_DEACTIVATE);
                     } else {
                         throw new ServiceUnavailableException(LRALogger.i18nLogger.warn_saveState(DEACTIVATE_REASON));
                     }
