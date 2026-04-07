@@ -18,7 +18,7 @@ public final class InjectFlags {
         END_AFTER_SAVE,
         END_DURING_CLEANUP,
         END_AFTER_CLEANUP,
-        END_AFTER_PARTICIPANT_RESPONSE
+        END_AFTER_PARTICIPANT_RESPONSE;
     }
 
     private static final Map<InjectPoint, AtomicBoolean> FLAGS = new EnumMap<>(InjectPoint.class);
@@ -41,7 +41,7 @@ public final class InjectFlags {
 
     public static void exitIfEnabled(InjectPoint p) {
         if (isEnabled(p)) {
-            System.exit(1);
+            Runtime.getRuntime().halt(1);
         }
     }
 
