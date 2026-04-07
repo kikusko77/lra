@@ -17,7 +17,8 @@ public final class InjectFlags {
         END_BEFORE_SAVE,
         END_AFTER_SAVE,
         END_DURING_CLEANUP,
-        END_AFTER_CLEANUP
+        END_AFTER_CLEANUP,
+        END_AFTER_PARTICIPANT_RESPONSE
     }
 
     private static final Map<InjectPoint, AtomicBoolean> FLAGS = new EnumMap<>(InjectPoint.class);
