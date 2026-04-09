@@ -404,8 +404,9 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
         }
 
         if (responseData != null &&
-                httpStatus == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode()) {
-            // the body should contain a valid ParticipantStatus
+                (httpStatus == Response.Status.CONFLICT.getStatusCode() ||
+                        httpStatus == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())) {
+            // the body should contain a valid ParticipantStatus (409 Conflict signals permanent failure per MP LRA spec)
             try {
                 return atEnd(reportFailure(compensate, endPath,
                         ParticipantStatus.valueOf(responseData).name()));
