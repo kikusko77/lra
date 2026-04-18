@@ -770,8 +770,7 @@ public class Coordinator extends Application {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getActiveLraIds() {
         try {
-            List<String> ids = lraService.getActiveLraIdsFromObjectStore();
-            return Response.ok(ids).build();
+            return Response.ok(lraService.getActiveLraIdsFromObjectStore()).build();
         } catch (Exception e) {
             return Response.status(INTERNAL_SERVER_ERROR)
                     .entity(e.getMessage())

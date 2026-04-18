@@ -1288,8 +1288,9 @@ public class NarayanaLRAClient implements Closeable {
                     }
 
                     if (t instanceof ServiceUnavailableException) {
-                        String msg = ((ServiceUnavailableException) t).getResponse().readEntity(String.class);
-                        int status = ((ServiceUnavailableException) t).getResponse().getStatus();
+                        Response response = ((ServiceUnavailableException) t).getResponse();
+                        String msg = response.readEntity(String.class);
+                        int status = response.getStatus();
 
                         if (supportsFailover && i < coordinatorCount - 1) {
                             LRALogger.logger.warnf(
@@ -1302,8 +1303,9 @@ public class NarayanaLRAClient implements Closeable {
                     }
 
                     if (t instanceof ClientErrorException) {
-                        String msg = ((ClientErrorException) t).getResponse().readEntity(String.class);
-                        int status = ((ClientErrorException) t).getResponse().getStatus();
+                        Response response = ((ClientErrorException) t).getResponse();
+                        String msg = response.readEntity(String.class);
+                        int status = response.getStatus();
                         throw new WebApplicationException(Response.status(status).entity(msg).build());
                     }
 
