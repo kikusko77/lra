@@ -685,6 +685,10 @@ public class LRAService {
             Uid uid = new Uid(uidString);
             LongRunningAction lra = new LongRunningAction(this, uid);
             if (lra.activate()) {
+                LRAStatus s = lra.getLRAStatus();
+                if (s == LRAStatus.FailedToClose || s == LRAStatus.FailedToCancel) {
+                    return null;
+                }
                 LRALogger.logger.warnf("OBJECTSTORE: activated uid=%s -> id=%s status=%s",
                         uidString, lra.getId(), lra.getLRAStatus());
                 return lra;
