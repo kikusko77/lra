@@ -150,6 +150,9 @@ public class NarayanaLRAClient implements Closeable {
     private boolean supportsFailover;
     private boolean storkInitialised;
 
+    // true while a @Retry-driven retry of a NarayanaLRAClient method is in flight on this thread
+    private static final ThreadLocal<Boolean> inRetry = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
     /**
      * Creating LRA client. The URL of the LRA coordinator will be taken
      * from system property {@link NarayanaLRAClient#LRA_COORDINATOR_URL_KEY}.
@@ -391,6 +394,17 @@ public class NarayanaLRAClient implements Closeable {
     @Retry(retryOn = WebApplicationException.class)
     public URI startLRA(URI parentLRA, String clientID, Long timeout, ChronoUnit unit, boolean verbose)
             throws WebApplicationException {
+        try {
+            return startLRAInternal(parentLRA, clientID, timeout, unit, verbose);
+        } catch (WebApplicationException e) {
+            // next @Retry invocation on this thread will send isRetry=true to the coordinator
+            inRetry.set(Boolean.TRUE);
+            throw e;
+        }
+    }
+
+    private URI startLRAInternal(URI parentLRA, String clientID, Long timeout, ChronoUnit unit, boolean verbose)
+            throws WebApplicationException {
         if (coordinatorCount > 1 && !lbMethodValid) {
             throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE)
                     .entity(LRALogger.i18nLogger.error_unsupportedLoadBalancer(lbMethod)).build());
@@ -414,6 +428,8 @@ public class NarayanaLRAClient implements Closeable {
         URI coordinatorInstance; // URI of one of a cluster of coordinators
         String encodedParentLRA = parentLRA == null ? ""
                 : URLEncoder.encode(parentLRA.toString(), StandardCharsets.UTF_8);
+
+        boolean isRetry = inRetry.get();
 
         for (int i = 0; i < coordinatorCount; i++) {
             if (coordinatorService != null) {
@@ -440,6 +456,7 @@ public class NarayanaLRAClient implements Closeable {
                         clientID,
                         Duration.of(timeout, unit).toMillis(),
                         encodedParentLRA,
+                        isRetry,
                         MediaType.TEXT_PLAIN,
                         LRAConstants.CURRENT_API_VERSION_STRING)
                         .toCompletableFuture().get(START_TIMEOUT, TimeUnit.SECONDS);
@@ -461,6 +478,7 @@ public class NarayanaLRAClient implements Closeable {
                 Current.push(lra);
                 Current.addActiveLRACache(lra);
 
+                inRetry.remove();
                 return lra;
 
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
@@ -1067,6 +1085,10 @@ public class NarayanaLRAClient implements Closeable {
 
     @Retry(retryOn = WebApplicationException.class)
     public URI enlistCompensator(URI uri, Long timelimit, String linkHeader, StringBuilder compensatorData) {
+        return enlistCompensatorInternal(uri, timelimit, linkHeader, compensatorData);
+    }
+
+    private URI enlistCompensatorInternal(URI uri, Long timelimit, String linkHeader, StringBuilder compensatorData) {
         // register with the coordinator
         URL lraId = null;
         String data = compensatorData == null ? null : compensatorData.toString();
@@ -1146,7 +1168,8 @@ public class NarayanaLRAClient implements Closeable {
 
                 try {
                     String recoveryUrl = response.getHeaderString(LRA_HTTP_RECOVERY_HEADER);
-                    return new URI(recoveryUrl);
+                    URI result = new URI(recoveryUrl);
+                    return result;
                 } catch (URISyntaxException e) {
                     String recoveryUrl = response.getHeaderString(LRA_HTTP_RECOVERY_HEADER);
                     LRALogger.logger.infof(e, "join %s returned an invalid recovery URI '%s': %s",
@@ -1160,6 +1183,24 @@ public class NarayanaLRAClient implements Closeable {
             } catch (InterruptedException | ExecutionException | TimeoutException e) {
                 Throwable t = e instanceof ExecutionException ? e.getCause() : e;
 
+                // terminal: coordinator doesn't know the LRA — surface as GONE
+                if (t instanceof NotFoundException) {
+                    String logMsg = LRALogger.i18nLogger.info_failedToEnlistingLRANotFound(
+                            lraId, coordinatorUrl, NOT_FOUND.getStatusCode(), NOT_FOUND.getReasonPhrase(),
+                            GONE.getStatusCode(), GONE.getReasonPhrase());
+                    LRALogger.logger.info(logMsg);
+                    throw new WebApplicationException(Response.status(GONE).entity(logMsg).build());
+                }
+
+                // terminal: other client errors (410, 412, etc.) — propagate original status
+                if (t instanceof ClientErrorException) {
+                    Response resp = ((ClientErrorException) t).getResponse();
+                    String msg = resp.hasEntity() ? resp.readEntity(String.class) : "";
+                    int status = resp.getStatus();
+                    throw new WebApplicationException(Response.status(status).entity(msg).build());
+                }
+
+                // retryable: coordinator unavailable
                 if (t instanceof ServiceUnavailableException) {
                     String msg = ((ServiceUnavailableException) t).getResponse().readEntity(String.class);
                     if (supportsFailover && i < coordinatorCount - 1) {
@@ -1169,17 +1210,6 @@ public class NarayanaLRAClient implements Closeable {
                         continue;
                     }
                     throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE).entity(msg).build());
-                }
-
-                if (t instanceof ExecutionException) {
-                    Throwable cause = t.getCause();
-                    if (cause instanceof NotFoundException) {
-                        String logMsg = LRALogger.i18nLogger.info_failedToEnlistingLRANotFound(
-                                lraId, coordinatorUrl, NOT_FOUND.getStatusCode(), NOT_FOUND.getReasonPhrase(),
-                                GONE.getStatusCode(), GONE.getReasonPhrase());
-                        LRALogger.logger.info(logMsg);
-                        throw new WebApplicationException(Response.status(GONE).entity(logMsg).build());
-                    }
                 }
 
                 // timeout or interrupt — try next coordinator if failover supported
@@ -1201,6 +1231,10 @@ public class NarayanaLRAClient implements Closeable {
 
     @Retry(retryOn = WebApplicationException.class)
     public void endLRA(URI lra, boolean confirm, String compensator, String userData) throws WebApplicationException {
+        endLRAInternal(lra, confirm, compensator, userData);
+    }
+
+    private void endLRAInternal(URI lra, boolean confirm, String compensator, String userData) throws WebApplicationException {
         lraTracef(lra, "%s LRA", confirm ? "close" : "compensate");
 
         URI uri = UriBuilder.fromUri(lra).replaceQuery(null).build();
