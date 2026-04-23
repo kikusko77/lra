@@ -37,7 +37,6 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
@@ -287,24 +286,22 @@ public class LRAService {
     }
 
     public synchronized LongRunningAction startLRA(String baseUri, URI parentLRA, String clientId, Long timelimit,
-            boolean isRetry) {
+            String lraUid) {
 
-        if (isRetry) {
-            LongRunningAction existing = findActiveOriginalInMemory(clientId, parentLRA);
-            if (existing != null) {
-                return existing;
-            }
-
-            try {
-                LongRunningAction fromStore = findActiveOriginalInObjectStore(clientId, parentLRA);
-                if (fromStore != null) {
-                    addTransaction(fromStore);
-                    return fromStore;
+        if (lraUid != null && !lraUid.isEmpty()) {
+            for (LongRunningAction candidate : lras.values()) {
+                if (lraUid.equals(candidate.get_uid().fileStringForm())) {
+                    return candidate;
                 }
-            } catch (Exception e) {
-                LRALogger.logger.warnf(e,
-                        "startLRA: lookup in object store failed, will create new LRA (clientId=%s parent=%s)",
-                        clientId, parentLRA);
+            }
+            LongRunningAction fromStore = activateFromStoreByUid(lraUid);
+            if (fromStore != null) {
+                if (fromStore.isRecovering()) {
+                    recoveringLRAs.putIfAbsent(fromStore.getId(), fromStore);
+                } else {
+                    addTransaction(fromStore);
+                }
+                return fromStore;
             }
         }
 
@@ -312,7 +309,7 @@ public class LRAService {
         int status;
 
         try {
-            lra = new LongRunningAction(this, baseUri, lookupTransaction(parentLRA), clientId);
+            lra = new LongRunningAction(this, baseUri, lookupTransaction(parentLRA), clientId, lraUid);
         } catch (URISyntaxException e) {
             throw new WebApplicationException(e.getMessage(),
                     Response.status(Response.Status.PRECONDITION_FAILED)
@@ -591,81 +588,6 @@ public class LRAService {
         }
 
         return result;
-    }
-
-    public LongRunningAction findActiveOriginalInObjectStore(String clientId, URI parentLRA)
-            throws IOException, ObjectStoreException {
-
-        for (LongRunningAction lra : loadLRAsFromObjectStore()) {
-            boolean clientMatches = clientId != null && clientId.equals(lra.getClientId());
-            boolean finishedOk = !lra.isFinished();
-            boolean parentMatches = sameParent(lra.getParentId(), parentLRA);
-
-            if (clientMatches && finishedOk && parentMatches) {
-                LRALogger.logger.infof(
-                        "OBJECTSTORE MATCH -> addTransaction+return lraId=%s uid=%s",
-                        lra.getId(), lra.get_uid());
-                addTransaction(lra);
-                return lra;
-            }
-        }
-
-        LRALogger.logger.infof(
-                "findActiveOriginalInObjectStore: NO MATCH for clientId='%s', parentLRA='%s'",
-                clientId, parentLRA);
-
-        return null;
-    }
-
-    private LongRunningAction findActiveOriginalInMemory(String clientId, URI parentLRA) {
-
-        for (LongRunningAction lra : lras.values()) {
-            boolean clientMatches = clientId != null && clientId.equals(lra.getClientId());
-            boolean finishedOk = !lra.isFinished();
-            boolean parentMatches = sameParent(lra.getParentId(), parentLRA);
-
-            if (clientMatches && finishedOk && parentMatches) {
-                LRALogger.logger.infof("ACTIVE MATCH -> returning lraId=%s", lra.getId());
-                return lra;
-            }
-        }
-
-        for (LongRunningAction lra : recoveringLRAs.values()) {
-            boolean clientMatches = clientId != null && clientId.equals(lra.getClientId());
-            boolean finishedOk = !lra.isFinished();
-            boolean parentMatches = sameParent(lra.getParentId(), parentLRA);
-
-            if (clientMatches && finishedOk && parentMatches) {
-                LRALogger.logger.infof("RECOVERING MATCH -> returning lraId=%s", lra.getId());
-                return lra;
-            }
-        }
-
-        return null;
-    }
-
-    private boolean sameParent(URI a, URI b) {
-        if (a == null && b == null) {
-            return true;
-        }
-        if (a == null || b == null) {
-            return false;
-        }
-
-        String auid = null;
-        String buid = null;
-        try {
-            auid = LRAConstants.getLRAUid(a);
-        } catch (Exception e) {
-            LRALogger.logger.warnf(e, "sameParent: failed getLRAUid(a) for a='%s'", a);
-        }
-        try {
-            buid = LRAConstants.getLRAUid(b);
-        } catch (Exception e) {
-            LRALogger.logger.warnf(e, "sameParent: failed getLRAUid(b) for b='%s'", b);
-        }
-
-        return Objects.equals(auid, buid);
     }
 
     public List<String> getActiveLraIdsFromObjectStore() throws IOException, ObjectStoreException {

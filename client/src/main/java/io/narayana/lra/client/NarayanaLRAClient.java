@@ -150,8 +150,9 @@ public class NarayanaLRAClient implements Closeable {
     private boolean supportsFailover;
     private boolean storkInitialised;
 
-    // true while a @Retry-driven retry of a NarayanaLRAClient method is in flight on this thread
-    private static final ThreadLocal<Boolean> inRetry = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    // Client-generated LRA uid for the in-flight startLRA call. Set on the first
+    // attempt and reused on every @Retry re-invocation on this thread,
+    private static final ThreadLocal<String> currentLraUid = new ThreadLocal<>();
 
     /**
      * Creating LRA client. The URL of the LRA coordinator will be taken
@@ -394,12 +395,18 @@ public class NarayanaLRAClient implements Closeable {
     @Retry(retryOn = WebApplicationException.class)
     public URI startLRA(URI parentLRA, String clientID, Long timeout, ChronoUnit unit, boolean verbose)
             throws WebApplicationException {
+
+        boolean generated = false;
+        if (currentLraUid.get() == null) {
+            currentLraUid.set(LRAConstants.newLRAUid());
+            generated = true;
+        }
         try {
             return startLRAInternal(parentLRA, clientID, timeout, unit, verbose);
-        } catch (WebApplicationException e) {
-            // next @Retry invocation on this thread will send isRetry=true to the coordinator
-            inRetry.set(Boolean.TRUE);
-            throw e;
+        } finally {
+            if (generated) {
+                currentLraUid.remove();
+            }
         }
     }
 
@@ -429,7 +436,7 @@ public class NarayanaLRAClient implements Closeable {
         String encodedParentLRA = parentLRA == null ? ""
                 : URLEncoder.encode(parentLRA.toString(), StandardCharsets.UTF_8);
 
-        boolean isRetry = inRetry.get();
+        String lraUid = currentLraUid.get();
 
         for (int i = 0; i < coordinatorCount; i++) {
             if (coordinatorService != null) {
@@ -456,7 +463,7 @@ public class NarayanaLRAClient implements Closeable {
                         clientID,
                         Duration.of(timeout, unit).toMillis(),
                         encodedParentLRA,
-                        isRetry,
+                        lraUid,
                         MediaType.TEXT_PLAIN,
                         LRAConstants.CURRENT_API_VERSION_STRING)
                         .toCompletableFuture().get(START_TIMEOUT, TimeUnit.SECONDS);
@@ -478,7 +485,6 @@ public class NarayanaLRAClient implements Closeable {
                 Current.push(lra);
                 Current.addActiveLRACache(lra);
 
-                inRetry.remove();
                 return lra;
 
             } catch (InterruptedException | ExecutionException | TimeoutException e) {

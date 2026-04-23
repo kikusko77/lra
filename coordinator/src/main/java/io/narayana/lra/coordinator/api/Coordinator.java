@@ -11,7 +11,6 @@ import static io.narayana.lra.LRAConstants.COMPENSATE;
 import static io.narayana.lra.LRAConstants.COMPLETE;
 import static io.narayana.lra.LRAConstants.COORDINATOR_PATH_NAME;
 import static io.narayana.lra.LRAConstants.CURRENT_API_VERSION_STRING;
-import static io.narayana.lra.LRAConstants.IS_RETRY_PARAM_NAME;
 import static io.narayana.lra.LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME;
 import static io.narayana.lra.LRAConstants.NARAYANA_LRA_PARTICIPANT_DATA_HEADER_NAME;
 import static io.narayana.lra.LRAConstants.PARENT_LRA_PARAM_NAME;
@@ -283,13 +282,13 @@ public class Coordinator extends Application {
                     + "All further invocations on the URL will return 404.\n"
                     + "The invoker can assume this was equivalent to a compensate operation.") @QueryParam(TIMELIMIT_PARAM_NAME) @DefaultValue("0") Long timelimit,
             @Parameter(name = PARENT_LRA_PARAM_NAME, description = "The enclosing LRA if this new LRA is nested") @QueryParam(PARENT_LRA_PARAM_NAME) @DefaultValue("") String parentLRA,
-            @Parameter(name = IS_RETRY_PARAM_NAME, description = "True when the client is retrying a previously failed startLRA; only then does the coordinator consult the dedup lookup.") @QueryParam(IS_RETRY_PARAM_NAME) @DefaultValue("false") boolean isRetry,
+            @Parameter(name = LRAConstants.LRA_UID_PARAM_NAME, description = "Client-supplied LRA uid used as the identifier. When provided and an LRA with the same uid already exists (in memory or object store) it is returned instead of creating a duplicate") @QueryParam(LRAConstants.LRA_UID_PARAM_NAME) String lraUid,
             @HeaderParam(HttpHeaders.ACCEPT) @DefaultValue(MediaType.TEXT_PLAIN) String mediaType,
             @Parameter(ref = LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) @HeaderParam(LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) @DefaultValue(CURRENT_API_VERSION_STRING) String version) {
 
         URI parentId = (parentLRA == null || parentLRA.trim().isEmpty()) ? null : toURI(parentLRA);
         String coordinatorUrl = String.format("%s%s", context.getBaseUri(), COORDINATOR_PATH_NAME);
-        LongRunningAction lra = lraService.startLRA(coordinatorUrl, parentId, clientId, timelimit, isRetry);
+        LongRunningAction lra = lraService.startLRA(coordinatorUrl, parentId, clientId, timelimit, lraUid);
         URI lraId = lra.getId();
 
         if (parentId != null) {

@@ -102,7 +102,7 @@ public interface CoordinatorClient {
             @QueryParam(LRAConstants.CLIENT_ID_PARAM_NAME) @DefaultValue("") String clientId,
             @QueryParam(LRAConstants.TIMELIMIT_PARAM_NAME) @DefaultValue("0") Long timeLimit,
             @QueryParam(LRAConstants.PARENT_LRA_PARAM_NAME) @DefaultValue("") String parentLRA,
-            @QueryParam(LRAConstants.IS_RETRY_PARAM_NAME) @DefaultValue("false") boolean isRetry,
+            @QueryParam(LRAConstants.LRA_UID_PARAM_NAME) String lraUid,
             @HeaderParam(HttpHeaders.ACCEPT) @DefaultValue(MediaType.TEXT_PLAIN) String accept,
             @HeaderParam(LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) String version);
 

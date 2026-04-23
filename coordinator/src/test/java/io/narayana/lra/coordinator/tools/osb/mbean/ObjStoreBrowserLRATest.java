@@ -74,7 +74,7 @@ public class ObjStoreBrowserLRATest {
         String lraUrl = "http://localhost:8080/lra";
 
         LongRunningAction lra = LRARecoveryModule.getService()
-                .startLRA(lraUrl, null, "client", Long.MAX_VALUE, false);
+                .startLRA(lraUrl, null, "client", Long.MAX_VALUE, null);
 
         osb.probe();
         UidWrapper uidWrapper = osb.findUid(lra.get_uid());
@@ -93,7 +93,7 @@ public class ObjStoreBrowserLRATest {
     @Test
     public void lraMBeanRemoval() throws Exception {
         String lraUrl = "http://localhost:8080/lra";
-        LongRunningAction lra = LRARecoveryModule.getService().startLRA(lraUrl, null, "client", Long.MAX_VALUE, false);
+        LongRunningAction lra = LRARecoveryModule.getService().startLRA(lraUrl, null, "client", Long.MAX_VALUE, null);
         OSEntryBean lraOSEntryBean = null;
         try {
             lra.begin(Long.MAX_VALUE); // Creating the LRA records in the log store.
@@ -135,7 +135,7 @@ public class ObjStoreBrowserLRATest {
         String lraUrl = "http://localhost:8080/lra";
 
         LongRunningAction lra = LRARecoveryModule.getService()
-                .startLRA(lraUrl, null, "client", Long.MAX_VALUE, false);
+                .startLRA(lraUrl, null, "client", Long.MAX_VALUE, null);
 
         // LongRunningAction -> FailedLongRunningAction
         LRARecoveryModule.getInstance()

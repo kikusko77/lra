@@ -8,6 +8,7 @@ package io.narayana.lra;
 import io.narayana.lra.logging.LRALogger;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.security.SecureRandom;
 import java.util.regex.Pattern;
 
 public final class LRAConstants {
@@ -28,6 +29,7 @@ public final class LRAConstants {
     public static final String TIMELIMIT_PARAM_NAME = "TimeLimit";
     public static final String PARENT_LRA_PARAM_NAME = "ParentLRA";
     public static final String IS_RETRY_PARAM_NAME = "isRetry";
+    public static final String LRA_UID_PARAM_NAME = "LRAUid";
     public static final String QUERY_PAIR_SEPARATOR = "&"; // separator to isolate each "key=value" pair of a URI query component
     public static final String QUERY_FIELD_SEPARATOR = "="; // separator to pick out the key and value of each pair
     public static final String RECOVERY_PARAM = "recoveryCount";
@@ -85,8 +87,24 @@ public final class LRAConstants {
 
     private static final Pattern UID_REGEXP_EXTRACT_MATCHER = Pattern.compile(".*/([^/?]+).*");
 
+    private static final SecureRandom UID_RNG = new SecureRandom();
+
     private LRAConstants() {
         // utility class
+    }
+
+    /**
+     * Generates a client-side LRA uid in Narayana {@code Uid} string form.
+     * Packs 126 random bits into the two long fields of the Narayana Uid layout
+     * (sign bit cleared so signed-hex serialisation round-trips byte-for-byte
+     * through {@code new Uid(String)}), with the remaining three int fields at 0.
+     *
+     * @return a uid string such as {@code 550e8400e29b41d4_2716446655440000_0_0_0}
+     */
+    public static String newLRAUid() {
+        long h0 = UID_RNG.nextLong() & Long.MAX_VALUE;
+        long h1 = UID_RNG.nextLong() & Long.MAX_VALUE;
+        return Long.toString(h0, 16) + "_" + Long.toString(h1, 16) + "_0_0_0";
     }
 
     /**
