@@ -654,7 +654,7 @@ public class LongRunningAction extends BasicAction {
         } else if (getSize(failedList) != 0) {
             updateState(cancel ? LRAStatus.FailedToCancel : LRAStatus.FailedToClose);
         } else if (getSize(pendingList) != 0 || getSize(preparedList) != 0) {
-            updateState(LRAStatus.Closing);
+            updateState(cancel ? LRAStatus.Cancelling : LRAStatus.Closing);
         } // otherwise status is (cancel ? LRAStatus.Cancelled : LRAStatus.Closed)
 
         if (isTopLevel()) {
