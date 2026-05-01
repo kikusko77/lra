@@ -53,6 +53,7 @@ public class LongRunningAction extends BasicAction {
     private static final ScheduledExecutorService scheduler = new ScheduledThreadPoolExecutor(10);
     public static final String DEACTIVATE_REASON = "deactivate failed";
     private static final long participantEnlistTimeout = initParticipantEnlistTimeout();
+    private static final ThreadLocal<Boolean> SUPPRESS_RESTORE_AUTO_ABORT = new ThreadLocal<>();
 
     private URI id;
     private URI parentId;
@@ -347,7 +348,7 @@ public class LongRunningAction extends BasicAction {
                         LRALogger.logger.debugf("Timer for LRA '%s' has expired since last reload", id);
                     }
 
-                    if (status == LRAStatus.Active) {
+                    if (status == LRAStatus.Active && !Boolean.TRUE.equals(SUPPRESS_RESTORE_AUTO_ABORT.get())) {
                         status = LRAStatus.Cancelling;
                         scheduler.schedule(this::abortLRA, 1, TimeUnit.MILLISECONDS);
                     }
@@ -1278,6 +1279,30 @@ public class LongRunningAction extends BasicAction {
 
         if (lock != null) {
             try {
+                Uid uid = get_uid();
+                if (lraService != null && uid != null && !Uid.nullUid().equals(uid)) {
+                    SUPPRESS_RESTORE_AUTO_ABORT.set(Boolean.TRUE);
+                    try {
+                        LongRunningAction storeView = lraService.activateFromStoreByUid(uid.fileStringForm());
+                        if (storeView != null) {
+                            LRAStatus persistedStatus = storeView.getLRAStatus();
+                            if (persistedStatus != null && persistedStatus != LRAStatus.Active) {
+                                LRALogger.logger.infof(
+                                        "[ABORT-LRA] skipping timeout abort for id=%s — store shows it has advanced to %s (probably another coord)",
+                                        id, persistedStatus);
+                                scheduledAbort = null;
+                                return;
+                            }
+                        }
+                    } catch (Exception e) {
+                        LRALogger.logger.infof(
+                                "[ABORT-LRA] could not peek at persisted state for id=%s (%s); proceeding with abort",
+                                id, e.getMessage());
+                    } finally {
+                        SUPPRESS_RESTORE_AUTO_ABORT.remove();
+                    }
+                }
+
                 int actionStatus = status();
 
                 scheduledAbort = null;
