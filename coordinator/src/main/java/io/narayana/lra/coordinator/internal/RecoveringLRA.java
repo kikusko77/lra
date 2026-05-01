@@ -75,6 +75,7 @@ class RecoveringLRA extends LongRunningAction {
 
                     // NB we don't Abort a BasicAction since that can bypass creation of a log
                     super.phase2Commit(true);
+                    repromoteAsyncPendingFromHeuristic();
 
                     runPostLRAActions(); // nb the participant record may have already ran the after action
 

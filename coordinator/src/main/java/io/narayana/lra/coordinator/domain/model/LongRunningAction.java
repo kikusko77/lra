@@ -757,6 +757,33 @@ public class LongRunningAction extends BasicAction {
         return inverted;
     }
 
+    protected void repromoteAsyncPendingFromHeuristic() {
+        if (heuristicList == null || heuristicList.size() == 0) {
+            return;
+        }
+
+        if (preparedList == null) {
+            preparedList = new RecordList();
+        }
+
+        AbstractRecord rec;
+        RecordListIterator iter = new RecordListIterator(heuristicList);
+        java.util.List<AbstractRecord> toMove = new ArrayList<>();
+        while ((rec = iter.iterate()) != null) {
+            if (rec instanceof LRAParticipantRecord) {
+                LRAParticipantRecord p = (LRAParticipantRecord) rec;
+                if (p.isAsyncPending()) {
+                    toMove.add(p);
+                }
+            }
+        }
+
+        for (AbstractRecord r : toMove) {
+            heuristicList.remove(r);
+            preparedList.insert(r);
+        }
+    }
+
     private boolean allFinished(RecordList... lists) {
         for (RecordList list : lists) {
             if (list != null) {
