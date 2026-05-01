@@ -750,6 +750,11 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
                         return OptionalInt.of(TwoPhaseOutcome.HEURISTIC_HAZARD);
                     case FailedToCompensate:
                     case FailedToComplete:
+                        if (forgetURI != null) {
+                            if (!forget()) {
+                                return OptionalInt.of(TwoPhaseOutcome.HEURISTIC_HAZARD);
+                            }
+                        }
                         return OptionalInt.of(reportFailure(compensate, statusURI, ps.name()));
                     case Active:
                         // participant has not been contacted yet — caller should invoke @Compensate/@Complete
