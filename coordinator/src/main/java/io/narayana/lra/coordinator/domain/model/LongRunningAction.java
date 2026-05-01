@@ -708,10 +708,12 @@ public class LongRunningAction extends BasicAction {
         if (status != nextState) {
             status = nextState; // we trust that nextState is reachable from the current one
 
-            if (save && (pendingList != null && pendingList.size() != 0)) {
-                if (!deactivate()) {
-                    throw new ServiceUnavailableException(LRALogger.i18nLogger.warn_saveState(DEACTIVATE_REASON));
-                }
+            boolean hasPending = pendingList != null && pendingList.size() != 0;
+            boolean isTerminal = nextState == LRAStatus.Closed
+                    || nextState == LRAStatus.Cancelled;
+
+            if (save && (hasPending || isTerminal) && !deactivate()) {
+                throw new ServiceUnavailableException(LRALogger.i18nLogger.warn_saveState(DEACTIVATE_REASON));
             }
 
             return true;
