@@ -301,9 +301,11 @@ public class LRAService {
             }
             LongRunningAction fromStore = activateFromStoreByUid(lraUid);
             if (fromStore != null) {
+                LRAStatus s = fromStore.getLRAStatus();
+                boolean successTerminal = s == LRAStatus.Closed || s == LRAStatus.Cancelled;
                 if (fromStore.isRecovering()) {
                     recoveringLRAs.putIfAbsent(fromStore.getId(), fromStore);
-                } else {
+                } else if (!successTerminal) {
                     addTransaction(fromStore);
                 }
                 return fromStore;
