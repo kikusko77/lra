@@ -812,6 +812,10 @@ public class LongRunningAction extends BasicAction {
 
     // return true if the status was changed
     protected boolean endStateCheck() {
+        if (hasAsyncPendingInLists(preparedList, pendingList)) {
+            return false;
+        }
+
         // update the status first by checking for heuristics and failed participants
         if (status == LRAStatus.Cancelling && allFinished(heuristicList, failedList)) {
             return updateState(hasFailure(heuristicList, failedList) ? LRAStatus.FailedToCancel : LRAStatus.Cancelled);
@@ -821,6 +825,22 @@ public class LongRunningAction extends BasicAction {
             return updateState(hasFailure(heuristicList, failedList) ? LRAStatus.FailedToClose : LRAStatus.Closed);
         }
 
+        return false;
+    }
+
+    private boolean hasAsyncPendingInLists(RecordList... lists) {
+        for (RecordList list : lists) {
+            if (list == null) {
+                continue;
+            }
+            RecordListIterator iter = new RecordListIterator(list);
+            AbstractRecord r;
+            while ((r = iter.iterate()) != null) {
+                if (r instanceof LRAParticipantRecord && ((LRAParticipantRecord) r).isAsyncPending()) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 
