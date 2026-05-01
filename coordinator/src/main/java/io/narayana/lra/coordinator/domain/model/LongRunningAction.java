@@ -582,6 +582,7 @@ public class LongRunningAction extends BasicAction {
                         trace_progress("phase2Commit for nested cancel");
                     }
                     super.phase2Commit(true);
+                    repromoteAsyncPendingFromHeuristic();
 
                     res = status();
 
@@ -620,6 +621,7 @@ public class LongRunningAction extends BasicAction {
                     trace_progress("doEnd with cancel");
                 }
                 super.phase2Commit(true);
+                repromoteAsyncPendingFromHeuristic();
                 res = super.status();
             } else {
                 // participants should be called in the opposite order from which they joined
@@ -630,6 +632,7 @@ public class LongRunningAction extends BasicAction {
                     trace_progress("doEnd with close");
                 }
                 res = super.End(true);
+                repromoteAsyncPendingFromHeuristic();
             }
         }
 
