@@ -463,6 +463,10 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
         return status == ParticipantStatus.FailedToCompensate || status == ParticipantStatus.FailedToComplete;
     }
 
+    boolean isAsyncPending() {
+        return status == ParticipantStatus.Compensating || status == ParticipantStatus.Completing;
+    }
+
     private boolean afterLRARequest(URI target, String payload) {
 
         try (Client client = ClientBuilder.newClient()) {
