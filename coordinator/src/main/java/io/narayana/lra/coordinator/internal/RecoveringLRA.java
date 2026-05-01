@@ -79,7 +79,6 @@ class RecoveringLRA extends LongRunningAction {
                     runPostLRAActions(); // nb the participant record may have already ran the after action
 
                     // if there are no more heuristics or failures then update the status of the LRA
-                    if (heuristicList.size() == 0 && failedList.size() == 0) {
                     // (also bail out if we still have async-pending participants in the prepared list)
                     if (heuristicList.size() == 0 && failedList.size() == 0 && preparedList.size() == 0) {
                         updateState(toLRAStatus(_theStatus));
