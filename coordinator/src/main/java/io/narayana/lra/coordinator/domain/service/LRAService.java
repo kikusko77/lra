@@ -80,9 +80,11 @@ public class LRAService {
 
                 LongRunningAction loaded = activateFromStoreByUid(uid);
                 if (loaded != null) {
+                    LRAStatus s = loaded.getLRAStatus();
+                    boolean successTerminal = s == LRAStatus.Closed || s == LRAStatus.Cancelled;
                     if (loaded.isRecovering()) {
                         recoveringLRAs.putIfAbsent(loaded.getId(), loaded);
-                    } else {
+                    } else if (!successTerminal) {
                         lras.putIfAbsent(loaded.getId(), loaded);
                     }
                     return loaded;
@@ -190,14 +192,11 @@ public class LRAService {
         }
         if (transaction.isRecovering()) {
             recoveringLRAs.put(transaction.getId(), transaction);
-        } else if (fromHierarchy || transaction.isTopLevel()) {
+        } else if ((fromHierarchy || transaction.isTopLevel()) && !transaction.hasPendingActions()) {
             // the LRA is top level or it's a nested LRA that was closed by a
             // parent LRA (ie when fromHierarchy is true) then it's okay to forget about the LRA
-
-            if (!transaction.hasPendingActions()) {
-                // this call is only required to clean up cached LRAs (JBTM-3250 will remove this cache).
-                remove(transaction);
-            }
+            // this call is only required to clean up cached LRAs (JBTM-3250 will remove this cache).
+            remove(transaction);
         }
     }
 
