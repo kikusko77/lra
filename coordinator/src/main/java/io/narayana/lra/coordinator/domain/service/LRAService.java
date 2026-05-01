@@ -219,8 +219,14 @@ public class LRAService {
     }
 
     public void remove(LongRunningAction lra) {
-        if (lra.isFailed()) { // persist failed LRA state
+        if (lra.isFailed()) {
             lra.deactivate();
+        } else if (lra.isTopLevel() && !lra.hasPendingActions() && !lra.isRecovering()) {
+            try {
+                getRM().removeCommitted(lra.get_uid());
+            } catch (Exception e) {
+                LRALogger.logger.warnf(e, "removeCommitted failed for uid=%s", lra.get_uid());
+            }
         }
         remove(lra.getId());
     }
@@ -604,7 +610,7 @@ public class LRAService {
         return ids;
     }
 
-    private LongRunningAction activateFromStoreByUid(String uidString) {
+    public LongRunningAction activateFromStoreByUid(String uidString) {
         try {
             Uid uid = new Uid(uidString);
             LongRunningAction lra = new LongRunningAction(this, uid);
