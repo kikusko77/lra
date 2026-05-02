@@ -393,6 +393,8 @@ public class LRAService {
             return Response.Status.PRECONDITION_FAILED.getStatusCode();
         }
 
+        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.LEAVE_BEFORE_SAVE);
+
         boolean wasForgotten;
         try {
             wasForgotten = transaction.forgetParticipant(compensatorUrl);
@@ -401,6 +403,9 @@ public class LRAService {
             throw new WebApplicationException(errorMsg, e, Response.status(Response.Status.BAD_REQUEST)
                     .entity(errorMsg).build());
         }
+
+        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.LEAVE_AFTER_SAVE);
+
         if (wasForgotten) {
             return Response.Status.OK.getStatusCode();
         } else {

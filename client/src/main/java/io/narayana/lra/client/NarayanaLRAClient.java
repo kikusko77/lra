@@ -590,31 +590,143 @@ public class NarayanaLRAClient implements Closeable {
         return enlistCompensator(lraId, timeLimit, linkHeaderValue.toString(), compensatorData);
     }
 
+    @Retry(retryOn = WebApplicationException.class)
     public void leaveLRA(URI lraId, String body) throws WebApplicationException {
-        try {
-            // Build the CoordinatorClient using the base coordinator URL
-            CoordinatorClient client = createCoordinatorClient(LRAConstants.getLRACoordinatorUrl(lraId));
+        leaveLRAInternal(lraId, body);
+    }
 
-            // Extract the LRA UID
-            String lraUid = LRAConstants.getLRAUid(lraId);
+    private void leaveLRAInternal(URI lraId, String body) throws WebApplicationException {
+        URI uri = UriBuilder.fromUri(lraId).replaceQuery(null).build();
+        String lraUid = LRAConstants.getLRAUid(lraId);
+        String requestBody = body == null ? "" : body;
 
-            Response response = client.leaveLRA(
-                    lraUid,
-                    MediaType.TEXT_PLAIN,
-                    LRAConstants.CURRENT_API_VERSION_STRING,
-                    body == null ? "" : body)
-                    .toCompletableFuture().get(LEAVE_TIMEOUT, TimeUnit.SECONDS);
+        for (int i = 0; i < coordinatorCount; i++) {
+            URI coordinatorInstance;
 
-            if (OK.getStatusCode() != response.getStatus()) {
-                String logMsg = LRALogger.i18nLogger.error_lraLeaveUnexpectedStatus(lraId, response.getStatus(),
-                        response.hasEntity() ? response.readEntity(String.class) : "");
-                LRALogger.logger.error(logMsg);
-                throwGenericLRAException(null, response.getStatus(), logMsg, null);
+            if (i == 0) {
+                // first try the coordinator that owns the LRA
+                coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
+                LRALogger.logger.infof("leaveLRA: first trying owner coordinator %s", coordinatorInstance);
+            } else if (coordinatorService != null) {
+                // then try other coordinators via Stork
+                var instance = coordinatorService.selectInstance()
+                        .await().atMost(Duration.ofSeconds(LEAVE_TIMEOUT));
+
+                coordinatorInstance = UriBuilder.fromPath(coordinatorUrl.getPath())
+                        .scheme(instance.isSecure() ? "https" : "http")
+                        .host(instance.getHost())
+                        .port(instance.getPort())
+                        .build();
+
+                LRALogger.logger.infof("leaveLRA: retrying with coordinator %s", coordinatorInstance);
+            } else {
+                // single coordinator mode, retry same one
+                coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
+                LRALogger.logger.infof("leaveLRA: retrying same coordinator %s", coordinatorInstance);
             }
-        } catch (InterruptedException | ExecutionException | TimeoutException e) {
-            throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE)
-                    .entity("leave LRA client request timed out, try again later").build());
+
+            try {
+                CoordinatorClient client = createCoordinatorClient(coordinatorInstance);
+
+                Response response = client.leaveLRA(
+                        lraUid,
+                        MediaType.TEXT_PLAIN,
+                        LRAConstants.CURRENT_API_VERSION_STRING,
+                        requestBody)
+                        .toCompletableFuture()
+                        .get(LEAVE_TIMEOUT, TimeUnit.SECONDS);
+
+                int status = response.getStatus();
+
+                if (status == OK.getStatusCode()) {
+                    return;
+                }
+
+                // retry on a different coordinator on 503
+                if (status == SERVICE_UNAVAILABLE.getStatusCode()
+                        && supportsFailover && i < coordinatorCount - 1) {
+                    LRALogger.logger.warnf(
+                            "leaveLRA: coordinator %s returned 503, trying next (attempt %d/%d)",
+                            coordinatorInstance, i + 1, coordinatorCount);
+                    continue;
+                }
+
+                // After failover the previous coordinator may have persisted the removal:
+                // 400 (compensator URL no longer enrolled), 404 (LRA gone), 412 (LRA no
+                // longer Active) all mean the participant is no longer in the LRA — that
+                // is exactly what leave was asking for, so treat as idempotent success.
+                if (i > 0 && (status == BAD_REQUEST.getStatusCode()
+                        || status == NOT_FOUND.getStatusCode()
+                        || status == PRECONDITION_FAILED.getStatusCode())) {
+                    LRALogger.logger.infof(
+                            "leaveLRA: coordinator %s returned %d after failover, treating as already removed",
+                            coordinatorInstance, status);
+                    return;
+                }
+
+                String responseBody = response.hasEntity() ? response.readEntity(String.class) : "";
+                String logMsg = LRALogger.i18nLogger.error_lraLeaveUnexpectedStatus(lraId, status, responseBody);
+                LRALogger.logger.error(logMsg);
+                throw new WebApplicationException(Response.status(status).entity(responseBody).build());
+
+            } catch (ExecutionException e) {
+                Throwable t = e.getCause();
+
+                if (t instanceof ServiceUnavailableException) {
+                    if (supportsFailover && i < coordinatorCount - 1) {
+                        LRALogger.logger.warnf(
+                                "leaveLRA: coordinator %s unavailable, trying next (attempt %d/%d)",
+                                coordinatorInstance, i + 1, coordinatorCount);
+                        continue;
+                    }
+                    Response response = ((ServiceUnavailableException) t).getResponse();
+                    String msg = response.readEntity(String.class);
+                    throw new WebApplicationException(Response.status(response.getStatus()).entity(msg).build());
+                }
+
+                if (t instanceof ClientErrorException) {
+                    Response response = ((ClientErrorException) t).getResponse();
+                    int status = response.getStatus();
+                    String msg = response.readEntity(String.class);
+                    if (i > 0 && (status == BAD_REQUEST.getStatusCode()
+                            || status == NOT_FOUND.getStatusCode()
+                            || status == PRECONDITION_FAILED.getStatusCode())) {
+                        LRALogger.logger.infof(
+                                "leaveLRA: coordinator %s returned %d after failover, treating as already removed",
+                                coordinatorInstance, status);
+                        return;
+                    }
+                    throw new WebApplicationException(Response.status(status).entity(msg).build());
+                }
+
+                if (supportsFailover && i < coordinatorCount - 1) {
+                    LRALogger.logger.warnf(
+                            "leaveLRA: coordinator %s failed with %s, trying next (attempt %d/%d)",
+                            coordinatorInstance,
+                            t != null ? t.getClass().getSimpleName() : "unknown",
+                            i + 1,
+                            coordinatorCount);
+                    continue;
+                }
+
+                throw new WebApplicationException(
+                        Response.status(SERVICE_UNAVAILABLE)
+                                .entity(t != null ? t.getMessage() : "leaveLRA failed")
+                                .build());
+            } catch (InterruptedException | TimeoutException e) {
+                if (supportsFailover && i < coordinatorCount - 1) {
+                    LRALogger.logger.warnf(
+                            "leaveLRA: coordinator %s timed out, trying next (attempt %d/%d)",
+                            coordinatorInstance, i + 1, coordinatorCount);
+                    continue;
+                }
+                throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE)
+                        .entity("leave LRA client request timed out, try again later").build());
+            }
         }
+
+        throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE)
+                .entity("no available coordinator for leaveLRA").build());
     }
 
     /**
