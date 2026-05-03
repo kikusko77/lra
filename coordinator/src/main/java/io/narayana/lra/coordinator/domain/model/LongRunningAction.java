@@ -76,7 +76,7 @@ public class LongRunningAction extends BasicAction {
 
     public LongRunningAction(LRAService lraService, String baseUrl, LongRunningAction parent, String clientId)
             throws URISyntaxException {
-        this(lraService, baseUrl, parent, clientId, null);
+        this(lraService, baseUrl, parent != null ? parent.getId() : null, clientId, null);
     }
 
     /**
@@ -87,6 +87,11 @@ public class LongRunningAction extends BasicAction {
      * {@link Uid} parser so the LRA's identity is client-controlled.
      */
     public LongRunningAction(LRAService lraService, String baseUrl, LongRunningAction parent, String clientId,
+            String externalUid) throws URISyntaxException {
+        this(lraService, baseUrl, parent != null ? parent.getId() : null, clientId, externalUid);
+    }
+
+    public LongRunningAction(LRAService lraService, String baseUrl, URI parentLRAUri, String clientId,
             String externalUid) throws URISyntaxException {
         super(externalUid != null && !externalUid.isEmpty() ? new Uid(externalUid) : new Uid());
 
@@ -101,12 +106,12 @@ public class LongRunningAction extends BasicAction {
 
         this.lraService = lraService;
 
-        if (parent != null) {
-            this.parentId = parent.getId();
+        if (parentLRAUri != null) {
+            this.parentId = parentLRAUri;
             // encode the parent in the child URI (by rights we'd use LRA_HTTP_PARENT_CONTEXT_HEADER)
             // the parent is used by children to contact parents in certain scenarios
             // BTW  this technique is historical and needs to be changed to use the header
-            this.id = Current.buildFullLRAUrl(String.format("%s/%s", baseUrl, get_uid().fileStringForm()), parent.getId());
+            this.id = Current.buildFullLRAUrl(String.format("%s/%s", baseUrl, get_uid().fileStringForm()), parentLRAUri);
         } else {
             this.id = new URI(String.format("%s/%s", baseUrl, get_uid().fileStringForm()));
         }
