@@ -345,7 +345,7 @@ public class LRAService {
         int status;
 
         try {
-            lra = new LongRunningAction(this, baseUri, lookupTransaction(parentLRA), clientId, lraUid);
+            lra = new LongRunningAction(this, baseUri, parentLRA, clientId, lraUid);
         } catch (URISyntaxException e) {
             throw new WebApplicationException(e.getMessage(),
                     Response.status(Response.Status.PRECONDITION_FAILED)
