@@ -646,6 +646,26 @@ public class LRAService {
         return ids;
     }
 
+    public LRAStatus getStatusFromStore(URI lraId) {
+        if (lraId == null) {
+            return null;
+        }
+        String uid = LRAConstants.getLRAUid(lraId);
+        if (uid == null || uid.isEmpty()) {
+            return null;
+        }
+        try {
+            Uid recordUid = new Uid(uid);
+            LongRunningAction lra = new LongRunningAction(this, recordUid);
+            if (lra.activate()) {
+                return lra.getLRAStatus();
+            }
+        } catch (Exception e) {
+            LRALogger.logger.warnf(e, "getStatusFromStore: activation failed for uid=%s", uid);
+        }
+        return null;
+    }
+
     public LongRunningAction activateFromStoreByUid(String uidString) {
         try {
             Uid uid = new Uid(uidString);

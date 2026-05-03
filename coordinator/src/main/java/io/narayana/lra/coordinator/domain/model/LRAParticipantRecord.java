@@ -508,11 +508,13 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
     private int atEnd(int res) {
         if (parentId != null
                 && (status == ParticipantStatus.Completed || status == ParticipantStatus.FailedToComplete)) {
-            if (lraService.getLRA(parentId).getStatus() == LRAStatus.Active) {
+
+            LRAStatus parentStatus = lraService.getStatusFromStore(parentId);
+            if (parentStatus == LRAStatus.Active) {
                 // completed nested participants must remain compensatable
                 return TwoPhaseOutcome.HEURISTIC_HAZARD; // ask to be called again
             } else {
-                // the parent is finishing so this is the post LRA invocation
+                // the parent is finishing/finished so this is the post LRA invocation
                 return runPostLRAActions();
             }
         }
