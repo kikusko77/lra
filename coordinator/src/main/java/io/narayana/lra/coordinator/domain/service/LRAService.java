@@ -113,6 +113,35 @@ public class LRAService {
         }
     }
 
+    public LongRunningAction lookupLocalTransaction(URI lraId) {
+        if (lraId == null) {
+            return null;
+        }
+        LongRunningAction lra = lras.get(lraId);
+        if (lra != null) {
+            return lra;
+        }
+        lra = recoveringLRAs.get(lraId);
+        if (lra != null) {
+            return lra;
+        }
+        // also try matching by uid since URIs can differ (localhost vs 127.0.0.1)
+        String uid = LRAConstants.getLRAUid(lraId);
+        if (uid != null) {
+            for (LongRunningAction candidate : lras.values()) {
+                if (uid.equals(candidate.get_uid().fileStringForm())) {
+                    return candidate;
+                }
+            }
+            for (LongRunningAction candidate : recoveringLRAs.values()) {
+                if (uid.equals(candidate.get_uid().fileStringForm())) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
     public LRAData getLRA(URI lraId) {
         LongRunningAction lra = getTransaction(lraId);
         return lra.getLRAData();

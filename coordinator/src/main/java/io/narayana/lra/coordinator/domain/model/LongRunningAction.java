@@ -310,7 +310,7 @@ public class LongRunningAction extends BasicAction {
             } else {
                 parentId = new URI(s);
 
-                LongRunningAction localParent = lraService.lookupTransaction(parentId);
+                LongRunningAction localParent = lraService.lookupLocalTransaction(parentId);
 
                 // if the parent LRA is in the same JVM as the nested LRA (remark, parents are saved before children)
                 // then it's possible to avoid JAX-RS calls by invoking transaction records directly instead:
@@ -1178,7 +1178,7 @@ public class LongRunningAction extends BasicAction {
             // however LRA does not use thread association (the context is passed explicitly,
             // the reason for this is that services do not have access to ArjunaCore and use
             // JAX-RS to propagate the context
-            LongRunningAction localParent = lraService.lookupTransaction(parentId);
+            LongRunningAction localParent = lraService.lookupLocalTransaction(parentId);
 
             if (localParent != null) {
                 // this parent is in-VM
