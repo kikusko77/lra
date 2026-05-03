@@ -340,6 +340,11 @@ public class LongRunningAction extends BasicAction {
                     : null;
             status = LRAStatus.valueOf(os.unpackString());
 
+            refreshParticipantLraRefs(pendingList);
+            refreshParticipantLraRefs(preparedList);
+            refreshParticipantLraRefs(heuristicList);
+            refreshParticipantLraRefs(failedList);
+
             /*
              * If the time limit has already been reached then the difference between now and the scheduled
              * abort time will be negative. Since scheduling a task with a negative time will run it immediately
@@ -1209,6 +1214,17 @@ public class LongRunningAction extends BasicAction {
         }
 
         return res;
+    }
+
+    private void refreshParticipantLraRefs(RecordList list) {
+        if (list == null) {
+            return;
+        }
+        for (AbstractRecord rec = list.peekFront(); rec != null; rec = list.peekNext(rec)) {
+            if (rec instanceof LRAParticipantRecord) {
+                ((LRAParticipantRecord) rec).setLRA(this);
+            }
+        }
     }
 
     private boolean linkChildWithParent(LongRunningAction localParent) {
