@@ -152,7 +152,7 @@ public class NarayanaLRAClient implements Closeable {
 
     // Client-generated LRA uid for the in-flight startLRA call. Set on the first
     // attempt and reused on every @Retry re-invocation on this thread,
-    private static final ThreadLocal<String> currentLraUid = new ThreadLocal<>();
+    private static final ThreadLocal<String> currentClientLraUid = new ThreadLocal<>();
 
     /**
      * Creating LRA client. The URL of the LRA coordinator will be taken
@@ -397,15 +397,15 @@ public class NarayanaLRAClient implements Closeable {
             throws WebApplicationException {
 
         boolean generated = false;
-        if (currentLraUid.get() == null) {
-            currentLraUid.set(LRAConstants.newLRAUid());
+        if (currentClientLraUid.get() == null) {
+            currentClientLraUid.set(LRAConstants.newLRAUid());
             generated = true;
         }
         try {
             return startLRAInternal(parentLRA, clientID, timeout, unit, verbose);
         } finally {
             if (generated) {
-                currentLraUid.remove();
+                currentClientLraUid.remove();
             }
         }
     }
@@ -436,7 +436,7 @@ public class NarayanaLRAClient implements Closeable {
         String encodedParentLRA = parentLRA == null ? ""
                 : URLEncoder.encode(parentLRA.toString(), StandardCharsets.UTF_8);
 
-        String lraUid = currentLraUid.get();
+        String clientLraUid = currentClientLraUid.get();
 
         for (int i = 0; i < coordinatorCount; i++) {
             if (coordinatorService != null) {
@@ -463,7 +463,7 @@ public class NarayanaLRAClient implements Closeable {
                         clientID,
                         Duration.of(timeout, unit).toMillis(),
                         encodedParentLRA,
-                        lraUid,
+                        clientLraUid,
                         MediaType.TEXT_PLAIN,
                         LRAConstants.CURRENT_API_VERSION_STRING)
                         .toCompletableFuture().get(START_TIMEOUT, TimeUnit.SECONDS);

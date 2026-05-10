@@ -320,15 +320,15 @@ public class LRAService {
     }
 
     public synchronized LongRunningAction startLRA(String baseUri, URI parentLRA, String clientId, Long timelimit,
-            String lraUid) {
+            String clientLraUid) {
 
-        if (lraUid != null && !lraUid.isEmpty()) {
+        if (clientLraUid != null && !clientLraUid.isEmpty()) {
             for (LongRunningAction candidate : lras.values()) {
-                if (lraUid.equals(candidate.get_uid().fileStringForm())) {
+                if (clientLraUid.equals(candidate.get_uid().fileStringForm())) {
                     return candidate;
                 }
             }
-            LongRunningAction fromStore = activateFromStoreByUid(lraUid);
+            LongRunningAction fromStore = activateFromStoreByUid(clientLraUid);
             if (fromStore != null) {
                 LRAStatus s = fromStore.getLRAStatus();
                 boolean successTerminal = s == LRAStatus.Closed || s == LRAStatus.Cancelled;
@@ -345,7 +345,7 @@ public class LRAService {
         int status;
 
         try {
-            lra = new LongRunningAction(this, baseUri, parentLRA, clientId, lraUid);
+            lra = new LongRunningAction(this, baseUri, parentLRA, clientId, clientLraUid);
         } catch (URISyntaxException e) {
             throw new WebApplicationException(e.getMessage(),
                     Response.status(Response.Status.PRECONDITION_FAILED)

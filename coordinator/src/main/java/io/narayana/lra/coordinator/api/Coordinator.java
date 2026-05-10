@@ -282,13 +282,13 @@ public class Coordinator extends Application {
                     + "All further invocations on the URL will return 404.\n"
                     + "The invoker can assume this was equivalent to a compensate operation.") @QueryParam(TIMELIMIT_PARAM_NAME) @DefaultValue("0") Long timelimit,
             @Parameter(name = PARENT_LRA_PARAM_NAME, description = "The enclosing LRA if this new LRA is nested") @QueryParam(PARENT_LRA_PARAM_NAME) @DefaultValue("") String parentLRA,
-            @Parameter(name = LRAConstants.LRA_UID_PARAM_NAME, description = "Client-supplied LRA uid used as the identifier. When provided and an LRA with the same uid already exists (in memory or object store) it is returned instead of creating a duplicate") @QueryParam(LRAConstants.LRA_UID_PARAM_NAME) String lraUid,
+            @Parameter(name = LRAConstants.CLIENT_LRA_UID_PARAM_NAME, description = "Client-supplied uid used as the LRA identifier and idempotency key. When provided and an LRA with the same uid already exists (in memory or object store) it is returned instead of creating a duplicate") @QueryParam(LRAConstants.CLIENT_LRA_UID_PARAM_NAME) String clientLraUid,
             @HeaderParam(HttpHeaders.ACCEPT) @DefaultValue(MediaType.TEXT_PLAIN) String mediaType,
             @Parameter(ref = LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) @HeaderParam(LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) @DefaultValue(CURRENT_API_VERSION_STRING) String version) {
 
         URI parentId = (parentLRA == null || parentLRA.trim().isEmpty()) ? null : toURI(parentLRA);
         String coordinatorUrl = String.format("%s%s", context.getBaseUri(), COORDINATOR_PATH_NAME);
-        LongRunningAction lra = lraService.startLRA(coordinatorUrl, parentId, clientId, timelimit, lraUid);
+        LongRunningAction lra = lraService.startLRA(coordinatorUrl, parentId, clientId, timelimit, clientLraUid);
         URI lraId = lra.getId();
 
         if (parentId != null) {
