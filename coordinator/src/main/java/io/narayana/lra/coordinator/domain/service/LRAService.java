@@ -24,7 +24,7 @@ import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.model.LRAParticipantRecord;
 import io.narayana.lra.coordinator.domain.model.LongRunningAction;
-import io.narayana.lra.coordinator.injectflags.InjectFlags;
+import io.narayana.lra.coordinator.failureflags.FailureFlags;
 import io.narayana.lra.coordinator.internal.LRARecoveryModule;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.ws.rs.NotFoundException;
@@ -215,7 +215,7 @@ public class LRAService {
     }
 
     public void finished(LongRunningAction transaction, boolean fromHierarchy) {
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.END_DURING_CLEANUP);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_DURING_CLEANUP);
         if (transaction.isFailed()) {
             getRM().moveEntryToFailedLRAPath(transaction.get_uid());
         }
@@ -393,11 +393,11 @@ public class LRAService {
                     .entity(errorMsg).build());
         }
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.END_BEFORE_SAVE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_BEFORE_SAVE);
 
         transaction.finishLRA(compensate, compensator, userData);
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.END_AFTER_SAVE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_AFTER_SAVE);
 
         if (BasicAction.Current() != null) {
             if (LRALogger.logger.isInfoEnabled()) {
@@ -408,7 +408,7 @@ public class LRAService {
 
         finished(transaction, fromHierarchy);
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.END_AFTER_CLEANUP);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_AFTER_CLEANUP);
 
         return transaction.getLRAData();
     }
@@ -422,7 +422,7 @@ public class LRAService {
             return Response.Status.PRECONDITION_FAILED.getStatusCode();
         }
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.LEAVE_BEFORE_SAVE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.LEAVE_BEFORE_SAVE);
 
         boolean wasForgotten;
         try {
@@ -433,7 +433,7 @@ public class LRAService {
                     .entity(errorMsg).build());
         }
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.LEAVE_AFTER_SAVE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.LEAVE_AFTER_SAVE);
 
         if (wasForgotten) {
             return Response.Status.OK.getStatusCode();
@@ -527,11 +527,11 @@ public class LRAService {
                     .entity(msg)
                     .build());
         }
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_BEFORE_RESPONSE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_BEFORE_RESPONSE);
 
         recoveryUrl.append(recoveryURI);
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_AFTER_RESPONSE_APPEND);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_AFTER_RESPONSE_APPEND);
 
         return Response.Status.OK.getStatusCode();
     }

@@ -23,7 +23,7 @@ import io.narayana.lra.Current;
 import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.service.LRAService;
-import io.narayana.lra.coordinator.injectflags.InjectFlags;
+import io.narayana.lra.coordinator.failureflags.FailureFlags;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.client.AsyncInvoker;
@@ -433,7 +433,7 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
 
         updateStatus(compensate);
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.END_AFTER_PARTICIPANT_RESPONSE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_AFTER_PARTICIPANT_RESPONSE);
 
         // if the the request is still in progress (ie accepted is true) let recovery finish it
         return atEnd(accepted ? TwoPhaseOutcome.HEURISTIC_HAZARD : TwoPhaseOutcome.FINISH_OK);

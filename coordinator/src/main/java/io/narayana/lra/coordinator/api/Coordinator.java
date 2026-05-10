@@ -33,7 +33,7 @@ import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.model.LongRunningAction;
 import io.narayana.lra.coordinator.domain.service.LRAService;
-import io.narayana.lra.coordinator.injectflags.InjectFlags;
+import io.narayana.lra.coordinator.failureflags.FailureFlags;
 import io.narayana.lra.coordinator.internal.LRARecoveryModule;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -328,7 +328,7 @@ public class Coordinator extends Application {
 
         Current.push(lraId);
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.START);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.START);
 
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder().add("lraId", lraId.toASCIIString()).build();
@@ -575,7 +575,7 @@ public class Coordinator extends Application {
         // test to see if the compensator endpoints are in the body of the join request
         boolean isLink = isLink(compensatorURL);
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_BEFORE_SAVE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_BEFORE_SAVE);
 
         if (compensatorLink != null && !compensatorLink.isEmpty()) {
             StringBuilder sb = new StringBuilder();
@@ -674,7 +674,7 @@ public class Coordinator extends Application {
             recoveryUrlValue = recoveryUrl.toString();
         }
 
-        InjectFlags.exitIfEnabled(InjectFlags.InjectPoint.JOIN_AFTER_SAVE);
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_AFTER_SAVE);
 
         try {
             return Response.status(status)
@@ -732,8 +732,8 @@ public class Coordinator extends Application {
                     .build();
         }
         try {
-            InjectFlags.InjectPoint p = InjectFlags.InjectPoint.valueOf(point.toUpperCase());
-            InjectFlags.set(p, true);
+            FailureFlags.FailurePoint p = FailureFlags.FailurePoint.valueOf(point.toUpperCase());
+            FailureFlags.set(p, true);
             return Response.ok("enabled " + p).build();
         } catch (IllegalArgumentException e) {
             return Response.status(400).entity("Unknown inject point: " + point).build();
@@ -750,8 +750,8 @@ public class Coordinator extends Application {
                     .build();
         }
         try {
-            InjectFlags.InjectPoint p = InjectFlags.InjectPoint.valueOf(point.toUpperCase());
-            InjectFlags.set(p, false);
+            FailureFlags.FailurePoint p = FailureFlags.FailurePoint.valueOf(point.toUpperCase());
+            FailureFlags.set(p, false);
             return Response.ok("disabled " + p).build();
         } catch (IllegalArgumentException e) {
             return Response.status(400).entity("Unknown inject point: " + point).build();
@@ -762,7 +762,7 @@ public class Coordinator extends Application {
     @Path("inject/reset")
     @Produces(MediaType.TEXT_PLAIN)
     public Response resetInject() {
-        InjectFlags.resetAll();
+        FailureFlags.resetAll();
         return Response.ok("reset all").build();
     }
 

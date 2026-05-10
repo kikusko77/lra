@@ -1,12 +1,12 @@
-package io.narayana.lra.coordinator.injectflags;
+package io.narayana.lra.coordinator.failureflags;
 
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public final class InjectFlags {
+public final class FailureFlags {
 
-    public enum InjectPoint {
+    public enum FailurePoint {
         START,
         JOIN_BEFORE_SAVE,
         JOIN_AFTER_SAVE,
@@ -23,25 +23,25 @@ public final class InjectFlags {
         LEAVE_AFTER_SAVE;
     }
 
-    private static final Map<InjectPoint, AtomicBoolean> FLAGS = new EnumMap<>(InjectPoint.class);
+    private static final Map<FailurePoint, AtomicBoolean> FLAGS = new EnumMap<>(FailurePoint.class);
 
     static {
-        for (InjectPoint p : InjectPoint.values())
+        for (FailurePoint p : FailurePoint.values())
             FLAGS.put(p, new AtomicBoolean(false));
     }
 
-    private InjectFlags() {
+    private FailureFlags() {
     }
 
-    public static void set(InjectPoint p, boolean enabled) {
+    public static void set(FailurePoint p, boolean enabled) {
         FLAGS.get(p).set(enabled);
     }
 
-    public static boolean isEnabled(InjectPoint p) {
+    public static boolean isEnabled(FailurePoint p) {
         return FLAGS.get(p).get();
     }
 
-    public static void exitIfEnabled(InjectPoint p) {
+    public static void exitIfEnabled(FailurePoint p) {
         if (isEnabled(p)) {
             Runtime.getRuntime().halt(1);
         }
