@@ -340,10 +340,7 @@ public class LongRunningAction extends BasicAction {
                     : null;
             status = LRAStatus.valueOf(os.unpackString());
 
-            refreshParticipantLraRefs(pendingList);
-            refreshParticipantLraRefs(preparedList);
-            refreshParticipantLraRefs(heuristicList);
-            refreshParticipantLraRefs(failedList);
+            refreshParticipantLraRefs(pendingList, preparedList, heuristicList, failedList);
 
             /*
              * If the time limit has already been reached then the difference between now and the scheduled
@@ -1214,13 +1211,15 @@ public class LongRunningAction extends BasicAction {
         return res;
     }
 
-    private void refreshParticipantLraRefs(RecordList list) {
-        if (list == null) {
-            return;
-        }
-        for (AbstractRecord rec = list.peekFront(); rec != null; rec = list.peekNext(rec)) {
-            if (rec instanceof LRAParticipantRecord) {
-                ((LRAParticipantRecord) rec).setLRA(this);
+    private void refreshParticipantLraRefs(RecordList... lists) {
+        for (RecordList list : lists) {
+            if (list == null) {
+                continue;
+            }
+            for (AbstractRecord rec = list.peekFront(); rec != null; rec = list.peekNext(rec)) {
+                if (rec instanceof LRAParticipantRecord) {
+                    ((LRAParticipantRecord) rec).setLRA(this);
+                }
             }
         }
     }
