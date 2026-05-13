@@ -1011,12 +1011,10 @@ public class LongRunningAction extends BasicAction {
 
     public boolean forgetParticipant(String participantUrl) {
         LRAParticipantRecord removed = findLRAParticipant(participantUrl, true);
-        if (removed != null) {
-            // Persist the updated pending list so that other coordinators (HA) and
-            // recovery see the participant as removed and do not call @Compensate/@Complete.
-            if (!deactivate()) {
-                LRALogger.logger.warn(LRALogger.i18nLogger.warn_saveState(DEACTIVATE_REASON));
-            }
+        // deactivate() persists the updated pending list so that other coordinators (HA)
+        // and recovery see the participant as removed and do not call @Compensate/@Complete.
+        if (removed != null && !deactivate()) {
+            LRALogger.logger.warn(LRALogger.i18nLogger.warn_saveState(DEACTIVATE_REASON));
         }
         return removed != null;
     }
