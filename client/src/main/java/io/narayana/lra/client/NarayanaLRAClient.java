@@ -601,7 +601,7 @@ public class NarayanaLRAClient implements Closeable {
             if (i == 0) {
                 // first try the coordinator that owns the LRA
                 coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
-                LRALogger.logger.infof("leaveLRA: first trying owner coordinator %s", coordinatorInstance);
+                LRALogger.logger.debugf("leaveLRA: first trying owner coordinator %s", coordinatorInstance);
             } else if (coordinatorService != null) {
                 // then try other coordinators via Stork
                 var instance = coordinatorService.selectInstance()
@@ -613,11 +613,11 @@ public class NarayanaLRAClient implements Closeable {
                         .port(instance.getPort())
                         .build();
 
-                LRALogger.logger.infof("leaveLRA: retrying with coordinator %s", coordinatorInstance);
+                LRALogger.logger.debugf("leaveLRA: retrying with coordinator %s", coordinatorInstance);
             } else {
                 // single coordinator mode, retry same one
                 coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
-                LRALogger.logger.infof("leaveLRA: retrying same coordinator %s", coordinatorInstance);
+                LRALogger.logger.debugf("leaveLRA: retrying same coordinator %s", coordinatorInstance);
             }
 
             try {
@@ -1356,7 +1356,7 @@ public class NarayanaLRAClient implements Closeable {
                 if (i == 0) {
                     // first try the coordinator that owns the LRA
                     coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
-                    LRALogger.logger.infof("endLRA: first trying owner coordinator %s", coordinatorInstance);
+                    LRALogger.logger.debugf("endLRA: first trying owner coordinator %s", coordinatorInstance);
                 } else if (coordinatorService != null) {
                     // then try other coordinators via Stork
                     var instance = coordinatorService.selectInstance()
@@ -1368,11 +1368,11 @@ public class NarayanaLRAClient implements Closeable {
                             .port(instance.getPort())
                             .build();
 
-                    LRALogger.logger.infof("endLRA: retrying with coordinator %s", coordinatorInstance);
+                    LRALogger.logger.debugf("endLRA: retrying with coordinator %s", coordinatorInstance);
                 } else {
                     // single coordinator mode, retry same one
                     coordinatorInstance = LRAConstants.getLRACoordinatorUrl(uri);
-                    LRALogger.logger.infof("endLRA: retrying same coordinator %s", coordinatorInstance);
+                    LRALogger.logger.debugf("endLRA: retrying same coordinator %s", coordinatorInstance);
                 }
 
                 try {
