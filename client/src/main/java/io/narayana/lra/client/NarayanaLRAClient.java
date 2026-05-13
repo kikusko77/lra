@@ -646,16 +646,7 @@ public class NarayanaLRAClient implements Closeable {
                     continue;
                 }
 
-                // After failover the previous coordinator may have persisted the removal:
-                // 400 (compensator URL no longer enrolled), 404 (LRA gone), 412 (LRA no
-                // longer Active) all mean the participant is no longer in the LRA — that
-                // is exactly what leave was asking for, so treat as idempotent success.
-                if (i > 0 && (status == BAD_REQUEST.getStatusCode()
-                        || status == NOT_FOUND.getStatusCode()
-                        || status == PRECONDITION_FAILED.getStatusCode())) {
-                    LRALogger.logger.infof(
-                            "leaveLRA: coordinator %s returned %d after failover, treating as already removed",
-                            coordinatorInstance, status);
+                if (treatAsAlreadyRemovedAfterFailover(i, status, coordinatorInstance)) {
                     return;
                 }
 
@@ -683,12 +674,7 @@ public class NarayanaLRAClient implements Closeable {
                     Response response = ((ClientErrorException) t).getResponse();
                     int status = response.getStatus();
                     String msg = response.readEntity(String.class);
-                    if (i > 0 && (status == BAD_REQUEST.getStatusCode()
-                            || status == NOT_FOUND.getStatusCode()
-                            || status == PRECONDITION_FAILED.getStatusCode())) {
-                        LRALogger.logger.infof(
-                                "leaveLRA: coordinator %s returned %d after failover, treating as already removed",
-                                coordinatorInstance, status);
+                    if (treatAsAlreadyRemovedAfterFailover(i, status, coordinatorInstance)) {
                         return;
                     }
                     throw new WebApplicationException(Response.status(status).entity(msg).build());
@@ -722,6 +708,18 @@ public class NarayanaLRAClient implements Closeable {
 
         throw new WebApplicationException(Response.status(SERVICE_UNAVAILABLE)
                 .entity("no available coordinator for leaveLRA").build());
+    }
+
+    private boolean treatAsAlreadyRemovedAfterFailover(int attempt, int status, URI coordinatorInstance) {
+        if (attempt > 0 && (status == BAD_REQUEST.getStatusCode()
+                || status == NOT_FOUND.getStatusCode()
+                || status == PRECONDITION_FAILED.getStatusCode())) {
+            LRALogger.logger.debugf(
+                    "leaveLRA: coordinator %s returned %d after failover, treating as already removed",
+                    coordinatorInstance, status);
+            return true;
+        }
+        return false;
     }
 
     /**
