@@ -327,9 +327,9 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
         // Poll @Status first so we avoid replaying @Compensate/@Complete unnecessarily.
         // Empty result means the participant is still Active and we fall through to call it normally.
         if (!accepted && statusURI != null) {
-            OptionalInt preflightOutcome = preflightGetStatus(compensate);
-            if (preflightOutcome.isPresent()) {
-                return atEnd(preflightOutcome.getAsInt());
+            OptionalInt resolved = tryResolveFromStatus(compensate);
+            if (resolved.isPresent()) {
+                return atEnd(resolved.getAsInt());
             }
         }
 
@@ -718,12 +718,12 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
     }
 
     /**
-     * Polls {@code @Status} before calling {@code @Compensate}/{@code @Complete} to check
-     * whether the participant already handled the request in a previous attempt.
-     * Returns a present value when the outcome is resolved, or empty when the participant
-     * is still {@code Active} and the caller should proceed with the normal invocation.
+     * Polls the participant's status endpoint before invoking the cancel/close callback to
+     * short-circuit when the participant already handled the request in a previous attempt.
+     * Returns a present value when the outcome is resolved, or empty when the participant is
+     * still {@code Active} and the caller should proceed with the normal invocation.
      */
-    private OptionalInt preflightGetStatus(boolean compensate) {
+    private OptionalInt tryResolveFromStatus(boolean compensate) {
         try (Client client = ClientBuilder.newClient()) {
             Response response = client.target(statusURI)
                     .request()
@@ -773,7 +773,7 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
         } catch (Exception e) {
             if (LRALogger.logger.isInfoEnabled()) {
                 LRALogger.logger.infof(
-                        "LRAParticipantRecord.preflightGetStatus: status URI %s unreachable (%s), will call endpoint directly",
+                        "LRAParticipantRecord.tryResolveFromStatus: status URI %s unreachable (%s), will call endpoint directly",
                         statusURI, e.getMessage());
             }
         }
