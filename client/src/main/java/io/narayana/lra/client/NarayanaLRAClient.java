@@ -151,8 +151,10 @@ public class NarayanaLRAClient implements Closeable {
     private boolean storkInitialised;
 
     // Client-generated LRA uid for the in-flight startLRA call. Set on the first
-    // attempt and reused on every @Retry re-invocation
-    private String currentClientLraUid;
+    // attempt and reused on every @Retry re-invocation on this thread. Cleared only
+    // on successful completion -- on exception we leave it in place so the @Retry
+    // re-invocation reads the same value and the coordinator can deduplicate.
+    private static final ThreadLocal<String> currentClientLraUid = new ThreadLocal<>();
 
     /**
      * Creating LRA client. The URL of the LRA coordinator will be taken
@@ -397,14 +399,14 @@ public class NarayanaLRAClient implements Closeable {
             throws WebApplicationException {
 
         boolean generated = false;
-        if (currentClientLraUid == null) {
-            currentClientLraUid = LRAConstants.newLRAUid();
+        if (currentClientLraUid.get() == null) {
+            currentClientLraUid.set(LRAConstants.newLRAUid());
             generated = true;
         }
         URI lra = startLRAInternal(parentLRA, clientID, timeout, unit, verbose);
 
         if (generated) {
-            currentClientLraUid = null;
+            currentClientLraUid.remove();
         }
         return lra;
     }
@@ -435,7 +437,7 @@ public class NarayanaLRAClient implements Closeable {
         String encodedParentLRA = parentLRA == null ? ""
                 : URLEncoder.encode(parentLRA.toString(), StandardCharsets.UTF_8);
 
-        String clientLraUid = currentClientLraUid;
+        String clientLraUid = currentClientLraUid.get();
 
         for (int i = 0; i < coordinatorCount; i++) {
             if (coordinatorService != null) {
