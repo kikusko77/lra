@@ -90,7 +90,7 @@ public class LRAService {
                     return loaded;
                 }
 
-                LRALogger.logger.errorf(
+                LRALogger.logger.debugf(
                         "getTransaction MISS on node=%s for id=%s",
                         System.getenv().getOrDefault("HOSTNAME", "unknown"),
                         lraId);
@@ -675,11 +675,11 @@ public class LRAService {
                 if (s == LRAStatus.FailedToClose || s == LRAStatus.FailedToCancel) {
                     return null;
                 }
-                LRALogger.logger.warnf("OBJECTSTORE: activated uid=%s -> id=%s status=%s",
+                LRALogger.logger.debugf("OBJECTSTORE: activated uid=%s -> id=%s status=%s",
                         uidString, lra.getId(), lra.getLRAStatus());
                 return lra;
             }
-            LRALogger.logger.warnf("OBJECTSTORE: activate=false for uid=%s", uidString);
+            LRALogger.logger.debugf("OBJECTSTORE: activate=false for uid=%s", uidString);
             return null;
         } catch (Exception e) {
             LRALogger.logger.warnf(e, "OBJECTSTORE: activation threw for uid=%s", uidString);
