@@ -591,10 +591,6 @@ public class NarayanaLRAClient implements Closeable {
 
     @Retry(retryOn = WebApplicationException.class)
     public void leaveLRA(URI lraId, String body) throws WebApplicationException {
-        leaveLRAInternal(lraId, body);
-    }
-
-    private void leaveLRAInternal(URI lraId, String body) throws WebApplicationException {
         URI uri = UriBuilder.fromUri(lraId).replaceQuery(null).build();
         String lraUid = LRAConstants.getLRAUid(lraId);
         String requestBody = body == null ? "" : body;
@@ -1348,10 +1344,6 @@ public class NarayanaLRAClient implements Closeable {
 
     @Retry(retryOn = WebApplicationException.class)
     public void endLRA(URI lra, boolean confirm, String compensator, String userData) throws WebApplicationException {
-        endLRAInternal(lra, confirm, compensator, userData);
-    }
-
-    private void endLRAInternal(URI lra, boolean confirm, String compensator, String userData) throws WebApplicationException {
         lraTracef(lra, "%s LRA", confirm ? "close" : "compensate");
 
         URI uri = UriBuilder.fromUri(lra).replaceQuery(null).build();
