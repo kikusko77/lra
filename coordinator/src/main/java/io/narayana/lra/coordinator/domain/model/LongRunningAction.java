@@ -319,17 +319,14 @@ public class LongRunningAction extends BasicAction {
 
                 // if the parent LRA is in the same JVM as the nested LRA (remark, parents are saved before children)
                 // then it's possible to avoid JAX-RS calls by invoking transaction records directly instead:
-                if (localParent != null) {
-                    // this LRA has a parent that is in-VM, so we can optimise away the JAX-RS calls when moving the
-                    // LRA to an end state:
-                    if (par == null) {
-                        // this must be the restoration of state after a crash, otherwise par would have been set in
-                        // the constructor, so fix up the parent and child records (this code should be identical to
-                        // what the constructor does and should be pulled out into its own routine if changes occur):
-                        if (!linkChildWithParent(localParent)) {
-                            LRALogger.i18nLogger.warn_restoreState("add parent/child failed");
-                            return false;
-                        }
+                if (localParent != null && par == null) {
+                    // The in-VM link is an optimisation. It fails (returns AR_REJECTED) when the parent's
+                    // BasicAction has moved past ABORTING — typical in HA where the parent's coordinator
+                    // ended it concurrently. Failing the restore would block the HTTP cascade and recovery
+                    // from finishing the nested, so log and continue without the link instead.
+                    if (!linkChildWithParent(localParent)) {
+                        LRALogger.i18nLogger.warn_restoreState(
+                                "add parent/child failed (parent past Active); continuing without in-VM link");
                     }
                 }
             }
@@ -584,6 +581,10 @@ public class LongRunningAction extends BasicAction {
 
                     updateState(LRAStatus.Cancelling); // can throw ServiceUnavailableException
 
+                    // re-inject lraService into records (the heuristic ones from a previous round
+                    // may have been restored from store and lost their transient references)
+                    checkParticipant(preparedList);
+
                     // call commit since the abort route does not save the failed list
                     if (LRALogger.logger.isTraceEnabled()) {
                         trace_progress("phase2Commit for nested cancel");
@@ -597,7 +598,14 @@ public class LongRunningAction extends BasicAction {
                 } else {
                     // forget calls for nested participants
                     if (forgetAllParticipants()) {
-                        updateState(LRAStatus.Closed); // can throw ServiceUnavailableException
+                        // a failed @Complete from an earlier provisional close left a failed
+                        // participant in the heuristic/failed list; surface that as FailedToClose
+                        // so the @AfterLRA notification carries the right terminal status.
+                        if (hasFailure(heuristicList, failedList)) {
+                            updateState(LRAStatus.FailedToClose); // can throw ServiceUnavailableException
+                        } else {
+                            updateState(LRAStatus.Closed); // can throw ServiceUnavailableException
+                        }
                     } else {
                         // some forget calls have not been received, we need to repeat them at the next recovery pass
                         if (LRALogger.logger.isTraceEnabled()) {
@@ -622,6 +630,10 @@ public class LongRunningAction extends BasicAction {
                 if (heuristicList == null) {
                     heuristicList = new RecordList();
                 }
+
+                // re-inject lraService into records (records restored from store have a null
+                // transient lraService until checkParticipant fixes them up)
+                checkParticipant(preparedList);
 
                 // call commit since the abort route does not save the failed list
                 if (LRALogger.logger.isTraceEnabled()) {
@@ -1218,7 +1230,9 @@ public class LongRunningAction extends BasicAction {
             }
             for (AbstractRecord rec = list.peekFront(); rec != null; rec = list.peekNext(rec)) {
                 if (rec instanceof LRAParticipantRecord) {
-                    ((LRAParticipantRecord) rec).setLRA(this);
+                    LRAParticipantRecord p = (LRAParticipantRecord) rec;
+                    p.setLraService(lraService);
+                    p.setLRA(this);
                 }
             }
         }
