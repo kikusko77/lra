@@ -4,18 +4,23 @@ import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerRequest;
+import io.vertx.core.json.JsonArray;
 import io.vertx.ext.web.client.WebClient;
 import java.io.Closeable;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jboss.logging.Logger;
 
 /**
@@ -40,6 +45,7 @@ public class CoordinatorProxyVertx implements Closeable {
     private static final int FORWARD_TIMEOUT_MS = 10_000;
     private static final int REQUEST_TIMEOUT_MS = 60_000;
     private static final int POLL_MS = 200;
+    private static final String ADMIN_ACTIVE_LRAS_PATH = "/admin/active-lras";
 
     private final List<URI> backends;
     private final int port;
@@ -152,6 +158,10 @@ public class CoordinatorProxyVertx implements Closeable {
      * Reads the body and pushes the request into the FIFO queue.
      */
     private void enqueue(HttpServerRequest request) {
+        if (ADMIN_ACTIVE_LRAS_PATH.equals(request.path())) {
+            handleAdminActiveLras(request);
+            return;
+        }
         request.body().onSuccess(body -> {
             PendingRequest req = new PendingRequest(request, body);
             queue.add(req);
@@ -244,6 +254,64 @@ public class CoordinatorProxyVertx implements Closeable {
                     if (!req.done().get())
                         queue.addFirst(req);
                 });
+    }
+
+    /**
+     * Fans out to every backend's {@code /active/ids} concurrently and returns the
+     * deduplicated union as a JSON array. Backends that fail or time out contribute
+     * nothing; the response still reports whatever the reachable backends saw.
+     */
+    private void handleAdminActiveLras(HttpServerRequest request) {
+        List<URI> targets = new ArrayList<>(backends);
+        if (targets.isEmpty()) {
+            writeAdminResponse(request, new ArrayList<>());
+            return;
+        }
+        Set<String> union = ConcurrentHashMap.newKeySet();
+        AtomicInteger remaining = new AtomicInteger(targets.size());
+        for (URI base : targets) {
+            String url = base.getScheme() + "://" + base.getHost() + ":" + base.getPort()
+                    + base.getPath() + "/active/ids";
+            webClient.getAbs(url).timeout(FORWARD_TIMEOUT_MS).send()
+                    .onSuccess(resp -> {
+                        if (resp.statusCode() == 200) {
+                            JsonArray body = safeJsonArray(resp.bodyAsString());
+                            for (int i = 0; i < body.size(); i++) {
+                                String id = body.getString(i);
+                                if (id != null) {
+                                    union.add(id);
+                                }
+                            }
+                        }
+                        if (remaining.decrementAndGet() == 0) {
+                            writeAdminResponse(request, new ArrayList<>(new LinkedHashSet<>(union)));
+                        }
+                    })
+                    .onFailure(err -> {
+                        LOG.debugf("admin/active-lras: backend %s unreachable: %s", base, err.getMessage());
+                        if (remaining.decrementAndGet() == 0) {
+                            writeAdminResponse(request, new ArrayList<>(new LinkedHashSet<>(union)));
+                        }
+                    });
+        }
+    }
+
+    private static JsonArray safeJsonArray(String body) {
+        if (body == null || body.isBlank()) {
+            return new JsonArray();
+        }
+        try {
+            return new JsonArray(body);
+        } catch (RuntimeException e) {
+            return new JsonArray();
+        }
+    }
+
+    private static void writeAdminResponse(HttpServerRequest request, List<String> ids) {
+        request.response()
+                .setStatusCode(200)
+                .putHeader("Content-Type", "application/json")
+                .end(new JsonArray(ids).encode());
     }
 
     private void checkCrashed() {
