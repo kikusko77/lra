@@ -1195,10 +1195,12 @@ public class LongRunningAction extends BasicAction {
             // however LRA does not use thread association (the context is passed explicitly,
             // the reason for this is that services do not have access to ArjunaCore and use
             // JAX-RS to propagate the context
-            LongRunningAction localParent = lraService.lookupLocalTransaction(parentId);
+            // Store fallback (not just local map) — in HA the parent often lives on a
+            // different backend. LRAService.startLRA already holds the parent's dist lock,
+            // so the load is race-free.
+            LongRunningAction localParent = lraService.lookupTransaction(parentId);
 
             if (localParent != null) {
-                // this parent is in-VM
                 if (!linkChildWithParent(localParent)) {
                     return ActionStatus.INVALID;
                 }
@@ -1246,8 +1248,20 @@ public class LongRunningAction extends BasicAction {
         }
 
         LRAChildAbstractRecord childAR = new LRAChildAbstractRecord(par);
+        if (add(childAR) == AddOutcome.AR_REJECTED) {
+            return false;
+        }
 
-        return add(childAR) != AddOutcome.AR_REJECTED;
+        // Persist the new parent → child link so it survives a crash. Without this the
+        // cancel/close cascade misses every nested when recovery loads the parent from
+        // store. Mirrors enlistParticipant which also deactivates after the add.
+        if (!localParent.deactivate()) {
+            LRALogger.logger.warn(LRALogger.i18nLogger.warn_saveState(
+                    "linkChildWithParent: failed to persist parent after linking nested " + id));
+            return false;
+        }
+
+        return true;
     }
 
     public int setTimeLimit(Long timeLimit, boolean save) {
