@@ -23,6 +23,7 @@ import io.narayana.lra.Current;
 import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.service.LRAService;
+import io.narayana.lra.coordinator.failureflags.FailureFlags;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.client.AsyncInvoker;
@@ -44,6 +45,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.Future;
@@ -320,6 +322,17 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
 
         int httpStatus = -1;
 
+        // If the coordinator crashed after sending the request but before Arjuna saved the outcome,
+        // accepted is false on recovery even though the participant may have already responded.
+        // Poll @Status first so we avoid replaying @Compensate/@Complete unnecessarily.
+        // Empty result means the participant is still Active and we fall through to call it normally.
+        if (!accepted && statusURI != null) {
+            OptionalInt resolved = tryResolveFromStatus(compensate);
+            if (resolved.isPresent()) {
+                return atEnd(resolved.getAsInt());
+            }
+        }
+
         if (accepted) {
             // the participant has previously returned a HTTP 202 Accepted response
             // to indicate that it is in progress in which case the status URI
@@ -391,8 +404,9 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
         }
 
         if (responseData != null &&
-                httpStatus == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode()) {
-            // the body should contain a valid ParticipantStatus
+                (httpStatus == Response.Status.CONFLICT.getStatusCode() ||
+                        httpStatus == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())) {
+            // the body should contain a valid ParticipantStatus (409 Conflict signals permanent failure per MP LRA spec)
             try {
                 return atEnd(reportFailure(compensate, endPath,
                         ParticipantStatus.valueOf(responseData).name()));
@@ -418,6 +432,8 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
         }
 
         updateStatus(compensate);
+
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_AFTER_PARTICIPANT_RESPONSE);
 
         // if the the request is still in progress (ie accepted is true) let recovery finish it
         return atEnd(accepted ? TwoPhaseOutcome.HEURISTIC_HAZARD : TwoPhaseOutcome.FINISH_OK);
@@ -445,6 +461,10 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
 
     boolean isFailed() {
         return status == ParticipantStatus.FailedToCompensate || status == ParticipantStatus.FailedToComplete;
+    }
+
+    boolean isAsyncPending() {
+        return status == ParticipantStatus.Compensating || status == ParticipantStatus.Completing;
     }
 
     private boolean afterLRARequest(URI target, String payload) {
@@ -488,11 +508,13 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
     private int atEnd(int res) {
         if (parentId != null
                 && (status == ParticipantStatus.Completed || status == ParticipantStatus.FailedToComplete)) {
-            if (lraService.getLRA(parentId).getStatus() == LRAStatus.Active) {
+
+            LRAStatus parentStatus = lraService.getStatusFromStore(parentId);
+            if (parentStatus == LRAStatus.Active) {
                 // completed nested participants must remain compensatable
                 return TwoPhaseOutcome.HEURISTIC_HAZARD; // ask to be called again
             } else {
-                // the parent is finishing so this is the post LRA invocation
+                // the parent is finishing/finished so this is the post LRA invocation
                 return runPostLRAActions();
             }
         }
@@ -693,6 +715,70 @@ public class LRAParticipantRecord extends AbstractRecord implements Comparable<A
         }
 
         return -1;
+    }
+
+    /**
+     * Polls the participant's status endpoint before invoking the cancel/close callback to
+     * short-circuit when the participant already handled the request in a previous attempt.
+     * Returns a present value when the outcome is resolved, or empty when the participant is
+     * still {@code Active} and the caller should proceed with the normal invocation.
+     */
+    private OptionalInt tryResolveFromStatus(boolean compensate) {
+        try (Client client = ClientBuilder.newClient()) {
+            Response response = client.target(statusURI)
+                    .request()
+                    .header(LRA_HTTP_CONTEXT_HEADER, lraId.toASCIIString())
+                    .header(LRA_HTTP_RECOVERY_HEADER, recoveryURI.toASCIIString())
+                    .header(LRA_HTTP_PARENT_CONTEXT_HEADER, parentId)
+                    .header(NARAYANA_LRA_PARTICIPANT_DATA_HEADER_NAME, compensatorData)
+                    .async()
+                    .get()
+                    .get(PARTICIPANT_TIMEOUT, TimeUnit.SECONDS);
+
+            if (response.getStatus() == Response.Status.GONE.getStatusCode()) {
+                // participant already handled the request and cleaned up
+                status = compensate ? ParticipantStatus.Compensated : ParticipantStatus.Completed;
+                return OptionalInt.of(TwoPhaseOutcome.FINISH_OK);
+            }
+
+            if (response.getStatus() == Response.Status.OK.getStatusCode() && response.hasEntity()) {
+                ParticipantStatus ps = ParticipantStatus.valueOf(response.readEntity(String.class));
+                switch (ps) {
+                    case Compensated:
+                    case Completed:
+                        status = ps;
+                        return OptionalInt.of(TwoPhaseOutcome.FINISH_OK);
+                    case Compensating:
+                    case Completing:
+                        // in progress from a previous attempt — let recovery poll again
+                        accepted = true;
+                        status = ps;
+                        return OptionalInt.of(TwoPhaseOutcome.HEURISTIC_HAZARD);
+                    case FailedToCompensate:
+                    case FailedToComplete:
+                        if (forgetURI != null) {
+                            if (!forget()) {
+                                return OptionalInt.of(TwoPhaseOutcome.HEURISTIC_HAZARD);
+                            }
+                        }
+                        return OptionalInt.of(reportFailure(compensate, statusURI, ps.name()));
+                    case Active:
+                        // participant has not been contacted yet — caller should invoke @Compensate/@Complete
+                        return OptionalInt.empty();
+                    default:
+                        // unknown state — be conservative, let caller invoke @Compensate/@Complete
+                        return OptionalInt.empty();
+                }
+            }
+        } catch (Exception e) {
+            if (LRALogger.logger.isInfoEnabled()) {
+                LRALogger.logger.infof(
+                        "LRAParticipantRecord.tryResolveFromStatus: status URI %s unreachable (%s), will call endpoint directly",
+                        statusURI, e.getMessage());
+            }
+        }
+        // status endpoint unreachable or returned unexpected code — proceed to call @Compensate/@Complete
+        return OptionalInt.empty();
     }
 
     private Future<Response> getAsyncResponse(WebTarget target, String method, AsyncInvoker asyncInvoker, String cData) {

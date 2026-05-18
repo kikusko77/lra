@@ -33,6 +33,7 @@ import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.model.LongRunningAction;
 import io.narayana.lra.coordinator.domain.service.LRAService;
+import io.narayana.lra.coordinator.failureflags.FailureFlags;
 import io.narayana.lra.coordinator.internal.LRARecoveryModule;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -42,7 +43,6 @@ import jakarta.ws.rs.ApplicationPath;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
-import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -282,12 +282,13 @@ public class Coordinator extends Application {
                     + "All further invocations on the URL will return 404.\n"
                     + "The invoker can assume this was equivalent to a compensate operation.") @QueryParam(TIMELIMIT_PARAM_NAME) @DefaultValue("0") Long timelimit,
             @Parameter(name = PARENT_LRA_PARAM_NAME, description = "The enclosing LRA if this new LRA is nested") @QueryParam(PARENT_LRA_PARAM_NAME) @DefaultValue("") String parentLRA,
+            @Parameter(name = LRAConstants.CLIENT_LRA_UID_PARAM_NAME, description = "Client-supplied uid used as the LRA identifier and idempotency key. When provided and an LRA with the same uid already exists (in memory or object store) it is returned instead of creating a duplicate") @QueryParam(LRAConstants.CLIENT_LRA_UID_PARAM_NAME) String clientLraUid,
             @HeaderParam(HttpHeaders.ACCEPT) @DefaultValue(MediaType.TEXT_PLAIN) String mediaType,
             @Parameter(ref = LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) @HeaderParam(LRAConstants.NARAYANA_LRA_API_VERSION_HEADER_NAME) @DefaultValue(CURRENT_API_VERSION_STRING) String version) {
 
         URI parentId = (parentLRA == null || parentLRA.trim().isEmpty()) ? null : toURI(parentLRA);
         String coordinatorUrl = String.format("%s%s", context.getBaseUri(), COORDINATOR_PATH_NAME);
-        LongRunningAction lra = lraService.startLRA(coordinatorUrl, parentId, clientId, timelimit);
+        LongRunningAction lra = lraService.startLRA(coordinatorUrl, parentId, clientId, timelimit, clientLraUid);
         URI lraId = lra.getId();
 
         if (parentId != null) {
@@ -326,6 +327,8 @@ public class Coordinator extends Application {
         }
 
         Current.push(lraId);
+
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.START);
 
         if (mediaType.equals(MediaType.APPLICATION_JSON)) {
             JsonObject model = Json.createObjectBuilder().add("lraId", lraId.toASCIIString()).build();
@@ -514,11 +517,10 @@ public class Coordinator extends Application {
             @HeaderParam(LRAConstants.NARAYANA_LRA_PARTICIPANT_LINK_HEADER_NAME) @DefaultValue("") String compensator,
             @HeaderParam(LRAConstants.NARAYANA_LRA_PARTICIPANT_DATA_HEADER_NAME) @DefaultValue("") String userData) {
 
-        LRAData lraData = lraService.endLRA(toURI(lraId), true, false, compensator, userData);
-
         try {
+            LRAData lraData = lraService.endLRA(toURI(lraId), true, false, compensator, userData);
             return buildResponse(lraData.getStatus().name(), version, mediaType);
-        } catch (NotFoundException e) {
+        } catch (WebApplicationException e) {
             return Response.status(e.getResponse().getStatus()).entity(e.getMessage()).build();
         }
     }
@@ -572,6 +574,8 @@ public class Coordinator extends Application {
 
         // test to see if the compensator endpoints are in the body of the join request
         boolean isLink = isLink(compensatorURL);
+
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_BEFORE_SAVE);
 
         if (compensatorLink != null && !compensatorLink.isEmpty()) {
             StringBuilder sb = new StringBuilder();
@@ -670,6 +674,8 @@ public class Coordinator extends Application {
             recoveryUrlValue = recoveryUrl.toString();
         }
 
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_AFTER_SAVE);
+
         try {
             return Response.status(status)
                     .entity(recoveryUrlValue)
@@ -714,6 +720,63 @@ public class Coordinator extends Application {
         return Response.status(status)
                 .header(NARAYANA_LRA_API_VERSION_HEADER_NAME, version)
                 .build();
+    }
+
+    @POST
+    @Path("inject/enable")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response enableInject(@QueryParam("point") String point) {
+        if (point == null || point.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Missing query param: point")
+                    .build();
+        }
+        try {
+            FailureFlags.FailurePoint p = FailureFlags.FailurePoint.valueOf(point.toUpperCase());
+            FailureFlags.set(p, true);
+            return Response.ok("enabled " + p).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(400).entity("Unknown inject point: " + point).build();
+        }
+    }
+
+    @POST
+    @Path("inject/disable")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response disableInject(@QueryParam("point") String point) {
+        if (point == null || point.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("Missing query param: point")
+                    .build();
+        }
+        try {
+            FailureFlags.FailurePoint p = FailureFlags.FailurePoint.valueOf(point.toUpperCase());
+            FailureFlags.set(p, false);
+            return Response.ok("disabled " + p).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(400).entity("Unknown inject point: " + point).build();
+        }
+    }
+
+    @POST
+    @Path("inject/reset")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response resetInject() {
+        FailureFlags.resetAll();
+        return Response.ok("reset all").build();
+    }
+
+    @GET
+    @Path("/active/ids")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getActiveLraIds() {
+        try {
+            return Response.ok(lraService.getActiveLraIdsFromObjectStore()).build();
+        } catch (Exception e) {
+            return Response.status(INTERNAL_SERVER_ERROR)
+                    .entity(e.getMessage())
+                    .build();
+        }
     }
 
     private Response buildResponse(String status, String apiVersion, String mediaType) {

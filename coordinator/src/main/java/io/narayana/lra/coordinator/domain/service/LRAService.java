@@ -14,19 +14,27 @@ import static java.util.stream.Collectors.toList;
 import com.arjuna.ats.arjuna.common.Uid;
 import com.arjuna.ats.arjuna.coordinator.ActionStatus;
 import com.arjuna.ats.arjuna.coordinator.BasicAction;
+import com.arjuna.ats.arjuna.exceptions.ObjectStoreException;
+import com.arjuna.ats.arjuna.objectstore.RecoveryStore;
+import com.arjuna.ats.arjuna.objectstore.StoreManager;
 import com.arjuna.ats.arjuna.recovery.RecoveryManager;
+import com.arjuna.ats.arjuna.state.InputObjectState;
+import com.arjuna.ats.internal.arjuna.common.UidHelper;
 import io.narayana.lra.LRAConstants;
 import io.narayana.lra.LRAData;
 import io.narayana.lra.coordinator.domain.model.LRAParticipantRecord;
 import io.narayana.lra.coordinator.domain.model.LongRunningAction;
+import io.narayana.lra.coordinator.failureflags.FailureFlags;
 import io.narayana.lra.coordinator.internal.LRARecoveryModule;
 import io.narayana.lra.logging.LRALogger;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,6 +78,22 @@ public class LRAService {
                     }
                 }
 
+                LongRunningAction loaded = activateFromStoreByUid(uid);
+                if (loaded != null) {
+                    LRAStatus s = loaded.getLRAStatus();
+                    boolean successTerminal = s == LRAStatus.Closed || s == LRAStatus.Cancelled;
+                    if (loaded.isRecovering()) {
+                        recoveringLRAs.putIfAbsent(loaded.getId(), loaded);
+                    } else if (!successTerminal) {
+                        lras.putIfAbsent(loaded.getId(), loaded);
+                    }
+                    return loaded;
+                }
+
+                LRALogger.logger.debugf(
+                        "getTransaction MISS on node=%s for id=%s",
+                        System.getenv().getOrDefault("HOSTNAME", "unknown"),
+                        lraId);
                 String errorMsg = "Cannot find transaction id: " + lraId;
                 throw new NotFoundException(errorMsg,
                         Response.status(NOT_FOUND).entity(errorMsg).build());
@@ -87,6 +111,35 @@ public class LRAService {
         } catch (NotFoundException e) {
             return null;
         }
+    }
+
+    public LongRunningAction lookupLocalTransaction(URI lraId) {
+        if (lraId == null) {
+            return null;
+        }
+        LongRunningAction lra = lras.get(lraId);
+        if (lra != null) {
+            return lra;
+        }
+        lra = recoveringLRAs.get(lraId);
+        if (lra != null) {
+            return lra;
+        }
+        // also try matching by uid since URIs can differ (localhost vs 127.0.0.1)
+        String uid = LRAConstants.getLRAUid(lraId);
+        if (uid != null) {
+            for (LongRunningAction candidate : lras.values()) {
+                if (uid.equals(candidate.get_uid().fileStringForm())) {
+                    return candidate;
+                }
+            }
+            for (LongRunningAction candidate : recoveringLRAs.values()) {
+                if (uid.equals(candidate.get_uid().fileStringForm())) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
     }
 
     public LRAData getLRA(URI lraId) {
@@ -162,19 +215,17 @@ public class LRAService {
     }
 
     public void finished(LongRunningAction transaction, boolean fromHierarchy) {
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_DURING_CLEANUP);
         if (transaction.isFailed()) {
             getRM().moveEntryToFailedLRAPath(transaction.get_uid());
         }
         if (transaction.isRecovering()) {
             recoveringLRAs.put(transaction.getId(), transaction);
-        } else if (fromHierarchy || transaction.isTopLevel()) {
+        } else if ((fromHierarchy || transaction.isTopLevel()) && !transaction.hasPendingActions()) {
             // the LRA is top level or it's a nested LRA that was closed by a
             // parent LRA (ie when fromHierarchy is true) then it's okay to forget about the LRA
-
-            if (!transaction.hasPendingActions()) {
-                // this call is only required to clean up cached LRAs (JBTM-3250 will remove this cache).
-                remove(transaction);
-            }
+            // this call is only required to clean up cached LRAs (JBTM-3250 will remove this cache).
+            remove(transaction);
         }
     }
 
@@ -197,8 +248,14 @@ public class LRAService {
     }
 
     public void remove(LongRunningAction lra) {
-        if (lra.isFailed()) { // persist failed LRA state
+        if (lra.isFailed()) {
             lra.deactivate();
+        } else if (lra.isTopLevel() && !lra.hasPendingActions() && !lra.isRecovering()) {
+            try {
+                getRM().removeCommitted(lra.get_uid());
+            } catch (Exception e) {
+                LRALogger.logger.warnf(e, "removeCommitted failed for uid=%s", lra.get_uid());
+            }
         }
         remove(lra.getId());
     }
@@ -262,12 +319,33 @@ public class LRAService {
         return null;
     }
 
-    public synchronized LongRunningAction startLRA(String baseUri, URI parentLRA, String clientId, Long timelimit) {
+    public synchronized LongRunningAction startLRA(String baseUri, URI parentLRA, String clientId, Long timelimit,
+            String clientLraUid) {
+
+        if (clientLraUid != null && !clientLraUid.isEmpty()) {
+            for (LongRunningAction candidate : lras.values()) {
+                if (clientLraUid.equals(candidate.get_uid().fileStringForm())) {
+                    return candidate;
+                }
+            }
+            LongRunningAction fromStore = activateFromStoreByUid(clientLraUid);
+            if (fromStore != null) {
+                LRAStatus s = fromStore.getLRAStatus();
+                boolean successTerminal = s == LRAStatus.Closed || s == LRAStatus.Cancelled;
+                if (fromStore.isRecovering()) {
+                    recoveringLRAs.putIfAbsent(fromStore.getId(), fromStore);
+                } else if (!successTerminal) {
+                    addTransaction(fromStore);
+                }
+                return fromStore;
+            }
+        }
+
         LongRunningAction lra;
         int status;
 
         try {
-            lra = new LongRunningAction(this, baseUri, lookupTransaction(parentLRA), clientId);
+            lra = new LongRunningAction(this, baseUri, parentLRA, clientId, clientLraUid);
         } catch (URISyntaxException e) {
             throw new WebApplicationException(e.getMessage(),
                     Response.status(Response.Status.PRECONDITION_FAILED)
@@ -315,7 +393,11 @@ public class LRAService {
                     .entity(errorMsg).build());
         }
 
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_BEFORE_SAVE);
+
         transaction.finishLRA(compensate, compensator, userData);
+
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_AFTER_SAVE);
 
         if (BasicAction.Current() != null) {
             if (LRALogger.logger.isInfoEnabled()) {
@@ -325,6 +407,8 @@ public class LRAService {
         }
 
         finished(transaction, fromHierarchy);
+
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.END_AFTER_CLEANUP);
 
         return transaction.getLRAData();
     }
@@ -338,6 +422,8 @@ public class LRAService {
             return Response.Status.PRECONDITION_FAILED.getStatusCode();
         }
 
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.LEAVE_BEFORE_SAVE);
+
         boolean wasForgotten;
         try {
             wasForgotten = transaction.forgetParticipant(compensatorUrl);
@@ -346,6 +432,9 @@ public class LRAService {
             throw new WebApplicationException(errorMsg, e, Response.status(Response.Status.BAD_REQUEST)
                     .entity(errorMsg).build());
         }
+
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.LEAVE_AFTER_SAVE);
+
         if (wasForgotten) {
             return Response.Status.OK.getStatusCode();
         } else {
@@ -438,8 +527,11 @@ public class LRAService {
                     .entity(msg)
                     .build());
         }
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_BEFORE_RESPONSE);
 
         recoveryUrl.append(recoveryURI);
+
+        FailureFlags.exitIfEnabled(FailureFlags.FailurePoint.JOIN_AFTER_RESPONSE_APPEND);
 
         return Response.Status.OK.getStatusCode();
     }
@@ -498,5 +590,100 @@ public class LRAService {
     private List<LRAData> getDataByStatus(Map<URI, LongRunningAction> lrasToFilter, LRAStatus status) {
         return lrasToFilter.values().stream().filter(t -> t.getLRAStatus() == status)
                 .map(LongRunningAction::getLRAData).collect(toList());
+    }
+
+    private List<LongRunningAction> loadLRAsFromObjectStore() throws IOException, ObjectStoreException {
+        //db entries
+        RecoveryStore store = StoreManager.getRecoveryStore();
+
+        InputObjectState uids = new InputObjectState();
+        //store locally all ids from objectstore
+        boolean ok = store.allObjUids(LongRunningAction.getType(), uids);
+        if (!ok) {
+            LRALogger.logger.warnf(
+                    "loadLRAsFromObjectStore: allObjUids returned false for type='%s'",
+                    LongRunningAction.getType());
+            return List.of();
+        }
+
+        List<LongRunningAction> result = new ArrayList<>();
+        Uid uid;
+
+        while ((uid = UidHelper.unpackFrom(uids)).notEquals(Uid.nullUid())) {
+            LongRunningAction lra = new LongRunningAction(this, uid);
+            //load fields by uid
+            boolean activated;
+            try {
+                activated = lra.activate();
+            } catch (Exception e) {
+                LRALogger.logger.warnf(e, "OBJECTSTORE: activate threw for uid=%s", uid);
+                continue;
+            }
+
+            if (!activated) {
+                LRALogger.logger.debugf("OBJECTSTORE: activate=false for uid=%s", uid);
+                continue;
+            }
+
+            result.add(lra);
+        }
+
+        return result;
+    }
+
+    public List<String> getActiveLraIdsFromObjectStore() throws IOException, ObjectStoreException {
+        List<String> ids = new ArrayList<>();
+
+        for (LongRunningAction lra : loadLRAsFromObjectStore()) {
+            if (!lra.isFinished() && lra.getLRAStatus() == LRAStatus.Active) {
+                URI id = lra.getId();
+                if (id != null) {
+                    ids.add(id.toASCIIString());
+                }
+            }
+        }
+
+        return ids;
+    }
+
+    public LRAStatus getStatusFromStore(URI lraId) {
+        if (lraId == null) {
+            return null;
+        }
+        String uid = LRAConstants.getLRAUid(lraId);
+        if (uid == null || uid.isEmpty()) {
+            return null;
+        }
+        try {
+            Uid recordUid = new Uid(uid);
+            LongRunningAction lra = new LongRunningAction(this, recordUid);
+            if (lra.activate()) {
+                return lra.getLRAStatus();
+            }
+        } catch (Exception e) {
+            LRALogger.logger.warnf(e, "getStatusFromStore: activation failed for uid=%s", uid);
+        }
+        return null;
+    }
+
+    public LongRunningAction activateFromStoreByUid(String uidString) {
+        try {
+            Uid uid = new Uid(uidString);
+            LongRunningAction lra = new LongRunningAction(this, uid);
+            if (lra.activate()) {
+                LRAStatus s = lra.getLRAStatus();
+                if (s == LRAStatus.FailedToClose || s == LRAStatus.FailedToCancel) {
+                    return null;
+                }
+                LRALogger.logger.debugf("OBJECTSTORE: activated uid=%s -> id=%s status=%s",
+                        uidString, lra.getId(), lra.getLRAStatus());
+                return lra;
+            }
+            LRALogger.logger.debugf("OBJECTSTORE: activate=false for uid=%s", uidString);
+            return null;
+        } catch (Exception e) {
+            LRALogger.logger.warnf(e, "OBJECTSTORE: activation threw for uid=%s", uidString);
+            return null;
+        }
     }
 }

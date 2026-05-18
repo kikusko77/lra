@@ -59,10 +59,13 @@ class RecoveringLRA extends LongRunningAction {
             if ((_theStatus == ActionStatus.PREPARED) ||
                     (_theStatus == ActionStatus.COMMITTING) ||
                     (_theStatus == ActionStatus.COMMITTED) ||
+                    (_theStatus == ActionStatus.ABORTING) ||
                     (_theStatus == ActionStatus.H_COMMIT) ||
                     (_theStatus == ActionStatus.H_MIXED) ||
-                    (_theStatus == ActionStatus.H_HAZARD)) {
-                if (heuristicList.size() != 0 || pendingList.size() != 0 || getLRAStatus() == LRAStatus.Active) {
+                    (_theStatus == ActionStatus.H_HAZARD) ||
+                    (_theStatus == ActionStatus.H_ROLLBACK)) {
+                if (heuristicList.size() != 0 || pendingList.size() != 0 || preparedList.size() != 0
+                        || getLRAStatus() == LRAStatus.Active) {
                     // Note that we do not try to recover failed LRAs.
                     // Move any heuristics back onto the prepared list for another attempt:
                     moveTo(heuristicList, preparedList, false);
@@ -72,11 +75,13 @@ class RecoveringLRA extends LongRunningAction {
 
                     // NB we don't Abort a BasicAction since that can bypass creation of a log
                     super.phase2Commit(true);
+                    repromoteAsyncPendingFromHeuristic();
 
                     runPostLRAActions(); // nb the participant record may have already ran the after action
 
                     // if there are no more heuristics or failures then update the status of the LRA
-                    if (heuristicList.size() == 0 && failedList.size() == 0) {
+                    // (also bail out if we still have async-pending participants in the prepared list)
+                    if (heuristicList.size() == 0 && failedList.size() == 0 && preparedList.size() == 0) {
                         updateState(toLRAStatus(_theStatus));
                     }
 
